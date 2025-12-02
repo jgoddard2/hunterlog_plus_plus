@@ -806,6 +806,26 @@ class JsApi:
 
         return ac
 
+    def test_propagation_connection(self) -> str:
+        '''
+        Test connection to the configured propagation data source.
+        
+        :returns: API response with connection test result
+        '''
+        try:
+            from propagation_fetcher import PropagationDataFetcher
+            
+            data_source = self.db.config.get_value('prop_data_source')
+            fetcher = PropagationDataFetcher(data_source)
+            
+            success = fetcher.test_connection()
+            
+            return self._response(True, "", connected=success)
+        except Exception as ex:
+            logging.error("Error testing propagation connection", exc_info=ex)
+            return self._response(False, f"Connection test failed: {ex}")
+
+
     def _response(self, success: bool, message: str, **kwargs) -> str:
         '''
         Returns a dumped json string from the given inputs.
@@ -838,9 +858,10 @@ class JsApi:
 
     def _get_win_maximized(self) -> bool:
         '''
-        Get the stored windows size.
+        Get the stored window maximized state.
         '''
         return self.db.config.get_value('is_max')
+
 
     def _store_win_size(self, size: tuple[int, int]):
         '''

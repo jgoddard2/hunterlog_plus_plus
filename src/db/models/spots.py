@@ -53,6 +53,12 @@ class Spot(Base):
     spot_source = sa.Column(sa.String)
     continent = sa.Column(sa.String)
 
+    # Propagation estimation data
+    propagation_snr = sa.Column(sa.Float, nullable=True)
+    propagation_status = sa.Column(sa.String(20), nullable=True)  # 'ssb', 'digital', 'not_reachable', 'no_data'
+    propagation_updated = sa.Column(sa.DateTime, nullable=True)
+
+
     def __repr__(self):
         return "<spot(id={self.spotId!r})>".format(self=self)
 

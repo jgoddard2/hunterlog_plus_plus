@@ -106,7 +106,7 @@ const columns: GridColDef[] = [
         }
     },
     {
-        field: 'spotOrig', headerName: 'Spot', width: 400,
+        field: 'spotOrig', headerName: 'Spot', width: 250,
         // valueGetter: (params: GridValueGetterParams) => {
         //     return `${params.row.spotter || ''}: ${params.row.comments || ''}`;
         // },
@@ -115,6 +115,41 @@ const columns: GridColDef[] = [
             return (
                 <SpotCommentsButton spotId={x.row.spotId} spotter={x.row.spotter} comments={x.row.comments} />
             )
+        }
+    },
+    {
+        field: 'propagation',
+        headerName: 'Prop',
+        width: 90,
+        type: 'number',
+        valueGetter: (params: GridValueGetterParams) => {
+            // Return numeric SNR value for sorting (-999 for no data)
+            const snr = params.row.propagation_snr;
+            return (snr !== undefined && snr !== null) ? snr : -999;
+        },
+        renderCell: (params: GridCellParams) => {
+            const snr = params.row.propagation_snr;
+            const status = params.row.propagation_status;
+
+            // Determine color and label based on status
+            let color = 'black';
+            let label = 'No Reports';
+
+            if (status === 'no_data' || status === undefined || status === null) {
+                color = 'black';
+                label = 'No Reports';
+            } else if (status === 'ssb') {
+                color = 'green';
+                label = `SSB: ${snr >= 0 ? '+' : ''}${snr?.toFixed(0)}dB`;
+            } else if (status === 'digital') {
+                color = 'orange';
+                label = `Digital: ${snr >= 0 ? '+' : ''}${snr?.toFixed(0)}dB`;
+            } else if (status === 'not_reachable') {
+                color = 'red';
+                label = `Not Reach: ${snr >= 0 ? '+' : ''}${snr?.toFixed(0)}dB`;
+            }
+
+            return <span style={{ color, fontWeight: 'bold', fontSize: '0.85rem' }}>{label}</span>;
         }
     },
     {

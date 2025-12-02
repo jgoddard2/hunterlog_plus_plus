@@ -13,6 +13,7 @@ import GeneralSettingsTab from './GeneralSettingsTab';
 import LoggerSettingsTab from './LoggerSettingsTab';
 import RadioSettingsTab from './RadioSettingsTab';
 import ScanningSettingsTab from './ScanningSettingsTab';
+import PropagationEstimationTab from './PropagationEstimationTab';
 import { setErrorMsg } from '../../util';
 import { useAppContext } from '../AppContext';
 
@@ -94,7 +95,6 @@ export default function ConfigModal() {
 
         }
     }, []);
-
     function loadLocalCfg(cfg2: ConfigVer2[]) {
         config.my_call = getVar(cfg2, 'my_call');
         config.my_grid6 = getVar(cfg2, 'my_grid6');
@@ -109,6 +109,16 @@ export default function ConfigModal() {
         config.rig_if_type = getVar(cfg2, 'rig_if_type');
         config.logger_type = Number(getVar(cfg2, "logger_type"));
         config.scan_wait_time = Number(getVar(cfg2, "scan_wait_time"));
+
+        // Propagation config with explicit defaults
+        const propEnabledRaw = getVar(cfg2, "prop_enabled");
+        config.prop_enabled = (propEnabledRaw === 'True' || propEnabledRaw === 'true') ? true : false;
+        config.prop_data_source = getVar(cfg2, "prop_data_source") || 'pskreporter';
+        config.prop_refresh_minutes = Number(getVar(cfg2, "prop_refresh_minutes")) || 10;
+        config.prop_ssb_threshold = Number(getVar(cfg2, "prop_ssb_threshold")) || 10;
+        config.prop_digital_threshold = Number(getVar(cfg2, "prop_digital_threshold")) || -15;
+
+        console.log('[ConfigModal] Loaded prop_enabled:', config.prop_enabled, 'from DB value:', propEnabledRaw);
         setConfig(config);
     }
 
@@ -126,6 +136,14 @@ export default function ConfigModal() {
         setVar(config2, "qth_string", config.qth_string);
         setVar(config2, "rig_if_type", config.rig_if_type);
         setVar(config2, "scan_wait_time", config.scan_wait_time.toString());
+
+        // Save propagation config
+        setVar(config2, "prop_enabled", config.prop_enabled ? 'True' : 'False');
+        setVar(config2, "prop_data_source", config.prop_data_source);
+        setVar(config2, "prop_refresh_minutes", config.prop_refresh_minutes.toString());
+        setVar(config2, "prop_ssb_threshold", config.prop_ssb_threshold.toString());
+        setVar(config2, "prop_digital_threshold", config.prop_digital_threshold.toString());
+
         setConfig2(config2);
     }
 
@@ -170,6 +188,7 @@ export default function ConfigModal() {
                         <Tab label={'CAT'} {...a11yProps(1)} />
                         <Tab label={'Logging'} {...a11yProps(2)} />
                         <Tab label={'Scanning'} {...a11yProps(3)} />
+                        <Tab label={'Propagation'} {...a11yProps(4)} />
                     </Tabs>
 
                     <CustomTabPanel value={value} index={0}>
@@ -183,6 +202,9 @@ export default function ConfigModal() {
                     </CustomTabPanel>
                     <CustomTabPanel value={value} index={3}>
                         <ScanningSettingsTab />
+                    </CustomTabPanel>
+                    <CustomTabPanel value={value} index={4}>
+                        <PropagationEstimationTab />
                     </CustomTabPanel>
 
                     <Divider aria-hidden="true" />

@@ -15,6 +15,11 @@ export interface UserConfig {
     qth_string: string,
     rig_if_type: string,
     scan_wait_time: number,
+    prop_enabled: boolean,
+    prop_data_source: string,
+    prop_refresh_minutes: number,
+    prop_ssb_threshold: number,
+    prop_digital_threshold: number,
 }
 
 export interface ConfigVer2 {

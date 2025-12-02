@@ -178,7 +178,53 @@ class ConfigQuery:
             'group': 'scanning',
             'enabled': 'True',
             'editable': 'True'
+        },
+        {
+            'key': 'prop_enabled',
+            'val': 'False',
+            'type': 'bool',
+            'description': 'Enable propagation estimation feature',
+            'group': 'propagation',
+            'enabled': 'True',
+            'editable': 'True'
+        },
+        {
+            'key': 'prop_data_source',
+            'val': 'pskreporter',
+            'type': 'string',
+            'description': 'Propagation data source (pskreporter, wspr, rbn)',
+            'group': 'propagation',
+            'enabled': 'True',
+            'editable': 'True'
+        },
+        {
+            'key': 'prop_refresh_minutes',
+            'val': '10',
+            'type': 'int',
+            'description': 'Minutes between propagation data refreshes',
+            'group': 'propagation',
+            'enabled': 'True',
+            'editable': 'True'
+        },
+        {
+            'key': 'prop_ssb_threshold',
+            'val': '10',
+            'type': 'int',
+            'description': 'SNR threshold for SSB mode (dB)',
+            'group': 'propagation',
+            'enabled': 'True',
+            'editable': 'True'
+        },
+        {
+            'key': 'prop_digital_threshold',
+            'val': '-15',
+            'type': 'int',
+            'description': 'SNR threshold for digital modes (dB)',
+            'group': 'propagation',
+            'enabled': 'True',
+            'editable': 'True'
         }
+
     ]
 
     def __init__(self, session: scoped_session):
