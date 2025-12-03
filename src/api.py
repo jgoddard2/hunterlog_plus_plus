@@ -6,6 +6,7 @@ import datetime
 import threading
 from datetime import timedelta
 
+from propagation_fetcher import PropagationDataFetcher
 from bands import get_band, get_name_of_band
 from db.db import DataBase
 from db.models.activators import Activator, ActivatorSchema
@@ -35,6 +36,7 @@ class JsApi:
         self.pota = PotaApi()
         self.sota = SotaApi()
         self.wwff = WwffApi()
+        self.prop_fetcher = PropagationDataFetcher()
         self.programs: dict[str, Program] = {
             "POTA": PotaProgram(self.db),
             "SOTA": SotaProgram(self.db),
@@ -63,6 +65,180 @@ class JsApi:
             logging.error("Error creating CAT object: ", exc_info=True)
             self.cat = None
         self.pw = None
+
+    def trigger_propagation_fetch(self, band_id: int):
+        """
+        Trigger a fetch of propagation data for the specified band.
+        This is called when the user changes the band filter.
+        """
+        try:
+            # Check if feature is enabled
+            if self.db.config.get_value('prop_enabled') != 'True':
+                return
+
+            # Get user grid
+            my_grid = self.db.config.get_value('my_grid6')
+            if not my_grid or len(my_grid) < 4:
+                logging.warning("Cannot fetch propagation: Invalid grid square")
+                return
+
+            # Convert band ID to string (e.g. 20 -> "20m")
+            # Note: get_name_of_band returns "20m" format
+            band_name = get_name_of_band(band_id)
+            if not band_name:
+                logging.warning(f"Cannot fetch propagation: Invalid band ID {band_id}")
+                return
+
+            logging.info(f"Triggering propagation fetch for {band_name} at {my_grid}")
+            
+            # Run in a separate thread to avoid blocking UI
+            threading.Thread(
+                target=self._fetch_and_update_propagation,
+                args=(my_grid, band_name)
+            ).start()
+            
+        except Exception as e:
+            logging.error(f"Error triggering propagation fetch: {e}")
+
+    def _fetch_and_update_propagation(self, my_grid: str, band_name: str):
+        """Background worker to fetch and update propagation data using kernel smoothing."""
+        try:
+            from propagation_kernel import PropagationReport, SpotPath, batch_predict_snr, classify_snr
+            from propagation_utils import grid_to_latlon, calculate_distance, calculate_bearing
+            
+            logging.info(f"[PROP FETCH] Starting kernel smoothing propagation fetch for band={band_name}, rx_grid={my_grid}")
+            
+            # Fetch global reports (not filtered by user grid)
+            reports = self.prop_fetcher.fetch_reception_reports(
+                rx_grid=my_grid,  # Kept for API compatibility, not used for filtering
+                band=band_name,
+                minutes=15
+            )
+            
+            logging.info(f"[PROP FETCH] Received {len(reports)} global propagation reports")
+            
+            if not reports:
+                logging.info("[PROP FETCH] No propagation reports found")
+                return
+
+            # Log first few reports for debugging
+            for i, r in enumerate(reports[:3]):
+                logging.info(f"[PROP FETCH] Report {i+1}: {r.get('tx_call')} ({r.get('tx_grid')}) -> {r.get('rx_call')} ({r.get('rx_grid')}), snr={r.get('snr')}dB, distance={r.get('distance_km'):.0f}km, azimuth={r.get('azimuth_deg', 0):.0f}°")
+            
+            if len(reports) > 3:
+                logging.info(f"[PROP FETCH] ... and {len(reports) - 3} more reports")
+
+            # Convert reports to PropagationReport objects
+            prop_reports = []
+            for r in reports:
+                try:
+                    # Calculate azimuth if not present
+                    azimuth = r.get('azimuth_deg', 0)
+                    if azimuth == 0 and r.get('tx_grid') and r.get('rx_grid'):
+                        azimuth = calculate_bearing(r.get('tx_grid'), r.get('rx_grid'))
+                    
+                    prop_report = PropagationReport(
+                        timestamp_utc=r.get('timestamp', ''),
+                        band=r.get('band', band_name),
+                        snr_db=r.get('snr', 0.0),
+                        tx_call=r.get('tx_call', ''),
+                        tx_grid=r.get('tx_grid', ''),
+                        tx_lat=r.get('tx_lat', 0.0),
+                        tx_lon=r.get('tx_lon', 0.0),
+                        rx_call=r.get('rx_call', ''),
+                        rx_grid=r.get('rx_grid', ''),
+                        rx_lat=r.get('rx_lat', 0.0),
+                        rx_lon=r.get('rx_lon', 0.0),
+                        distance_km=r.get('distance_km', 0.0),
+                        azimuth_deg=azimuth
+                    )
+                    prop_reports.append(prop_report)
+                except Exception as ex:
+                    logging.debug(f"[PROP FETCH] Error converting report: {ex}")
+                    continue
+            
+            logging.info(f"[PROP FETCH] Converted {len(prop_reports)} reports for kernel smoothing")
+            
+            # Get current spots from database (only active, non-QRT)
+            try:
+                logging.debug('getting lock for propagation update')
+                if not self.lock.acquire(timeout=4.00):
+                    logging.warning("_fetch_and_update_propagation: lock not acquired")
+                    return
+                    
+                spots = self.db.spots.get_spots()
+                logging.info(f"[PROP FETCH] Processing {len(spots)} spots for predictions")
+                
+                # Build spot paths for kernel smoothing
+                spot_paths = []
+                my_lat, my_lon = grid_to_latlon(my_grid)
+                
+                for spot in spots:
+                    # Skip spots without grid square data
+                    if not spot.grid4 and not spot.grid6:
+                        continue
+                    
+                    spot_grid = spot.grid6 if spot.grid6 else spot.grid4
+                    
+                    try:
+                        # Calculate path geometry from user to activator
+                        distance_km = calculate_distance(my_grid, spot_grid)
+                        azimuth_deg = calculate_bearing(my_grid, spot_grid)
+                        
+                        spot_path = SpotPath(
+                            spot_id=spot.spotId,
+                            activator_call=spot.activator,
+                            activator_grid=spot_grid,
+                            distance_km=distance_km,
+                            azimuth_deg=azimuth_deg,
+                            band=band_name
+                        )
+                        spot_paths.append(spot_path)
+                    except Exception as ex:
+                        logging.debug(f"[PROP FETCH] Error calculating path for spot {spot.spotId}: {ex}")
+                        continue
+                
+                logging.info(f"[PROP FETCH] Calculated path geometry for {len(spot_paths)} spots")
+                
+                # Use kernel smoothing to predict SNR for each spot
+                reports_by_band = {band_name: prop_reports}
+                predictions = batch_predict_snr(spot_paths, reports_by_band)
+                
+                logging.info(f"[PROP FETCH] Generated {sum(1 for v in predictions.values() if v is not None)} SNR predictions")
+                
+                # Get SNR thresholds from config
+                ssb_threshold = self.db.config.get_value('prop_ssb_threshold')
+                digital_threshold = self.db.config.get_value('prop_digital_threshold')
+                
+                # Update spots with predictions
+                update_count = 0
+                for spot_id, predicted_snr in predictions.items():
+                    spot = self.db.spots.get_spot(spot_id)
+                    if spot:
+                        if predicted_snr is not None:
+                            spot.propagation_snr = predicted_snr
+                            spot.propagation_status = classify_snr(predicted_snr, ssb_threshold, digital_threshold)
+                            spot.propagation_updated = datetime.datetime.utcnow()
+                            update_count += 1
+                            
+                            # Log first few predictions
+                            if update_count <= 3:
+                                logging.info(f"[PROP UPDATE] Predicted SNR for {spot.activator} at {spot.reference}: {predicted_snr:.1f}dB ({spot.propagation_status})")
+                        else:
+                            # No prediction available
+                            spot.propagation_status = 'no_data'
+                
+                self.db.commit_session()
+                
+                logging.info(f"[PROP FETCH] Successfully updated {update_count} spots with predicted SNR")
+                
+            finally:
+                if self.lock.locked():
+                    self.lock.release()
+            
+        except Exception as e:
+            logging.error(f"[PROP FETCH] Error in propagation background worker: {e}", exc_info=True)
+
 
     def get_spot(self, spot_id: int):
         logging.debug('py get_spot')

@@ -21,7 +21,7 @@ export default function PropagationEstimationTab() {
 
     const handleRefreshMinutesChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const val = parseInt(event.target.value);
-        if (!isNaN(val) && val >= 5 && val <= 60) {
+        if (!isNaN(val) && val >= 1 && val <= 60) {
             setConfig({ ...config, prop_refresh_minutes: val });
         }
     };
@@ -94,8 +94,8 @@ export default function PropagationEstimationTab() {
                 type="number"
                 value={config.prop_refresh_minutes || 10}
                 onChange={handleRefreshMinutesChange}
-                helperText="How often to fetch data (5-60 min)"
-                inputProps={{ min: 5, max: 60 }}
+                helperText="How often to fetch data (1-60 min)"
+                inputProps={{ min: 1, max: 60 }}
                 disabled={!config.prop_enabled}
                 size="small"
             />

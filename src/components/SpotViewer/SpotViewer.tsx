@@ -122,6 +122,8 @@ const columns: GridColDef[] = [
         headerName: 'Prop',
         width: 90,
         type: 'number',
+        headerAlign: 'left',
+        align: 'left',
         valueGetter: (params: GridValueGetterParams) => {
             // Return numeric SNR value for sorting (-999 for no data)
             const snr = params.row.propagation_snr;

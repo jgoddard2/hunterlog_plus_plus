@@ -17,7 +17,12 @@ const defData: UserConfig = {
     ftx_mode: '',
     qth_string: '',
     rig_if_type: '',
-    scan_wait_time: 5
+    scan_wait_time: 5,
+    prop_enabled: false,
+    prop_data_source: 'pskreporter',
+    prop_refresh_minutes: 10,
+    prop_ssb_threshold: 10,
+    prop_digital_threshold: -15
 };
 
 export interface ConfigContextType {
@@ -47,7 +52,12 @@ export const ConfigContextProvider = ({ children }: any) => {
             ftx_mode: ctx.ftx_mode,
             qth_string: ctx.qth_string,
             rig_if_type: ctx.rig_if_type,
-            scan_wait_time: ctx.scan_wait_time
+            scan_wait_time: ctx.scan_wait_time,
+            prop_enabled: ctx.prop_enabled,
+            prop_data_source: ctx.prop_data_source,
+            prop_refresh_minutes: ctx.prop_refresh_minutes,
+            prop_ssb_threshold: ctx.prop_ssb_threshold,
+            prop_digital_threshold: ctx.prop_digital_threshold
         };
         setConfigData(newContext);
     };

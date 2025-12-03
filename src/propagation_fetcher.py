@@ -85,6 +85,64 @@ class PSKReporterClient:
             logging.error(f"Error fetching PSKReporter data: {ex}")
             return []
     
+    def fetch_reception_reports(
+        self,
+        rx_grid: str,
+        band: Optional[str] = None,
+        minutes: int = 15
+    ) -> List[Dict]:
+        """
+        Fetch recent global reception reports for kernel smoothing.
+        
+        NOTE: This fetches broadly (not filtered by receiver grid) to enable
+        kernel smoothing predictions based on path geometry.
+        
+        Args:
+            rx_grid: User's grid square (not used for filtering, kept for API compatibility)
+            band: Optional band filter
+            minutes: Minutes to look back
+            
+        Returns:
+            List of reception reports with path geometry
+        """
+        self._rate_limit()
+        
+        flow_start = datetime.utcnow() - timedelta(minutes=minutes)
+        
+        params = {
+            'flowStartSeconds': int(flow_start.timestamp()),
+            'mode': 'FT8',  # FT8 provides most data
+            'rptlimit': 2000,  # Limit to prevent overload
+            'rronly': 1,
+            'noactive': 1,
+            # NOTE: NOT filtering by receiverLocator to get global data
+        }
+        
+        logging.info(f"[PROP FETCH] PSKReporter API query: GLOBAL (no grid filter), band={band}, minutes={minutes}")
+        logging.info(f"[PROP FETCH] PSKReporter params: {params}")
+        
+        try:
+            response = requests.get(self.BASE_URL, params=params, timeout=30)
+            response.raise_for_status()
+            
+            logging.info(f"[PROP FETCH] PSKReporter response status: {response.status_code}, content length: {len(response.text)} bytes")
+            
+            reports = self._parse_xml_response(response.text, band)
+            
+            logging.info(f"[PROP FETCH] Fetched {len(reports)} global reception reports (band filter: {band or 'all bands'})")
+            
+            # Log sample of parsed reports
+            if reports:
+                sample = reports[0]
+                logging.info(f"[PROP FETCH] Sample report: {sample}")
+            
+            return reports
+            
+        except requests.exceptions.RequestException as ex:
+            logging.error(f"[PROP FETCH] Error fetching PSKReporter reception data: {ex}")
+            return []
+
+
     def query_path_reports(
         self,
         tx_grid: str,

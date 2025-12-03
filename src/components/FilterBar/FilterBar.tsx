@@ -234,6 +234,12 @@ export const FilterBar = (props: IFilterBarPros) => {
         console.log("changing band to: " + m);
         window.pywebview.api.set_band_filter(x);
 
+        // Trigger propagation fetch for the new band
+        if (window.pywebview.api.trigger_propagation_fetch) {
+            console.log("Triggering propagation fetch for band:", x);
+            window.pywebview.api.trigger_propagation_fetch(x);
+        }
+
         let next = { ...contextData, bandFilter: x };
         setData(next);
         setBand(m);

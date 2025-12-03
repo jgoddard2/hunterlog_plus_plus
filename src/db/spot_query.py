@@ -123,3 +123,69 @@ class SpotQuery:
 
         spot.act_cmts = "|".join(act_comments)
         self.session.commit()
+
+    # NOTE: This method is deprecated in favor of kernel smoothing approach
+    # Propagation updates are now handled directly in api.py using kernel smoothing
+    # Keeping this for reference in case we need to revert
+    """
+    def update_propagation_data(self, reports: list[dict]):
+        '''
+        Update spots with propagation data from PSKReporter reports.
+        '''
+        if not reports:
+            return
+
+        logging.info(f"[PROP UPDATE] Processing {len(reports)} propagation reports")
+
+        # Create a map of callsign -> best report (highest SNR)
+        best_reports = {}
+        for r in reports:
+            call = r['tx_call']
+            snr = r['snr']
+            # If we already have a report for this call, keep the one with higher SNR
+            if call not in best_reports or snr > best_reports[call]['snr']:
+                best_reports[call] = r
+
+        logging.info(f"[PROP UPDATE] Consolidated to {len(best_reports)} unique callsigns")
+
+        if not best_reports:
+            return
+
+        # Find spots that match these activators
+        # We only care about spots that are not expired/invalid? 
+        # Or just update any matching spot.
+        # Let's update all matching spots to be safe.
+        activators = list(best_reports.keys())
+        
+        logging.info(f"[PROP UPDATE] Looking for spots matching {len(activators)} activators")
+        
+        # Process in chunks to avoid SQLite limits if too many
+        chunk_size = 500
+        total_updated = 0
+        
+        for i in range(0, len(activators), chunk_size):
+            chunk = activators[i:i + chunk_size]
+            
+            spots = self.session.query(Spot).filter(Spot.activator.in_(chunk)).all()
+            
+            logging.info(f"[PROP UPDATE] Chunk {i//chunk_size + 1}: Found {len(spots)} spots to update")
+            
+            for spot in spots:
+                report = best_reports.get(spot.activator)
+                if report:
+                    spot.propagation_snr = report['snr']
+                    # Determine status based on SNR (simple logic for now, UI handles color)
+                    # We could store 'Good', 'Fair', 'Poor' here if needed
+                    spot.propagation_status = 'Active' 
+                    spot.propagation_updated = datetime.datetime.utcnow()
+                    
+                    total_updated += 1
+                    
+                    # Log first few updates
+                    if total_updated <= 5:
+                        logging.info(f"[PROP UPDATE] Updated spot: {spot.activator} at {spot.reference} with SNR={report['snr']}dB")
+            
+            self.session.commit()
+        
+        logging.info(f"[PROP UPDATE] Successfully updated propagation data for {total_updated} spots")
+    """

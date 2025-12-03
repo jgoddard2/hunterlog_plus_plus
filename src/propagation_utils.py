@@ -83,6 +83,36 @@ def calculate_distance(grid1: str, grid2: str) -> float:
         return 0.0
 
 
+def calculate_bearing(grid1: str, grid2: str) -> float:
+    """
+    Calculate great-circle bearing from grid1 to grid2.
+    
+    Args:
+        grid1: Starting grid square
+        grid2: Destination grid square
+        
+    Returns:
+        Bearing in degrees (0-360), where 0 = North, 90 = East
+    """
+    try:
+        lat1, lon1 = grid_to_latlon(grid1)
+        lat2, lon2 = grid_to_latlon(grid2)
+        
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        dlambda = math.radians(lon2 - lon1)
+        
+        y = math.sin(dlambda) * math.cos(phi2)
+        x = (math.cos(phi1) * math.sin(phi2) -
+             math.sin(phi1) * math.cos(phi2) * math.cos(dlambda))
+        
+        brng = math.degrees(math.atan2(y, x))
+        return (brng + 360.0) % 360.0
+    except Exception as ex:
+        logging.error(f"Error calculating bearing between {grid1} and {grid2}: {ex}")
+        return 0.0
+
+
 def determine_propagation_status(
     snr: float,
     ssb_threshold: float = 10.0,
