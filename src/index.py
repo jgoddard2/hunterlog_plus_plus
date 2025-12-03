@@ -92,6 +92,9 @@ def update_ticker(t: DownloadThread):
     show_frontend_work()
     do_update(spot_arr[0], spot_arr[1], spot_arr[2])
     refresh_frontend()
+    
+    # Check if propagation data needs updating
+    the_api.check_and_update_propagation()
 
 
 def on_closing():

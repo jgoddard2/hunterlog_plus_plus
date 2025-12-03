@@ -44,6 +44,10 @@ class JsApi:
             '': NoProgram(self.db)
         }
         self.seen_regions = [""]
+        
+        # Propagation tracking
+        self.last_prop_update = None
+        self.current_band_id = 0
 
         logging.debug("init CAT...")
         lp = LoggerParams(
@@ -66,10 +70,48 @@ class JsApi:
             self.cat = None
         self.pw = None
 
+    def check_and_update_propagation(self):
+        """
+        Check if propagation data needs updating based on configured interval.
+        Called periodically from update_ticker.
+        """
+        try:
+            # Check if feature is enabled
+            if self.db.config.get_value('prop_enabled') != 'True':
+                return
+            
+            # Get refresh interval in minutes
+            refresh_minutes = self.db.config.get_value('prop_refresh_minutes')
+            if not refresh_minutes:
+                refresh_minutes = 10  # Default fallback
+            
+            # Check if enough time has passed since last update
+            now = datetime.datetime.now()
+            if self.last_prop_update is not None:
+                elapsed = (now - self.last_prop_update).total_seconds() / 60.0
+                if elapsed < refresh_minutes:
+                    # Not time yet
+                    return
+            
+            # Get current band filter
+            band_id = self.db.filters.band_filter
+            if band_id == 0 or band_id is None:
+                # No band selected, skip
+                return
+            
+            logging.info(f"[PROP TIMER] Auto-refresh triggered (interval: {refresh_minutes} min)")
+            
+            # Trigger update
+            self.last_prop_update = now
+            self.trigger_propagation_fetch(band_id)
+            
+        except Exception as e:
+            logging.error(f"Error in check_and_update_propagation: {e}", exc_info=True)
+    
     def trigger_propagation_fetch(self, band_id: int):
         """
         Trigger a fetch of propagation data for the specified band.
-        This is called when the user changes the band filter.
+        This is called when the user changes the band filter or periodically.
         """
         try:
             # Check if feature is enabled
@@ -90,6 +132,10 @@ class JsApi:
                 return
 
             logging.info(f"Triggering propagation fetch for {band_name} at {my_grid}")
+            
+            # Update tracking when manually triggered
+            self.last_prop_update = datetime.datetime.now()
+            self.current_band_id = band_id
             
             # Run in a separate thread to avoid blocking UI
             threading.Thread(
