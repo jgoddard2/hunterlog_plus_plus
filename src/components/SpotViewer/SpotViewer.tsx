@@ -148,7 +148,7 @@ const columns: GridColDef[] = [
                 label = `Digital: ${snr >= 0 ? '+' : ''}${snr?.toFixed(0)}dB`;
             } else if (status === 'not_reachable') {
                 color = 'red';
-                label = `Not Reach: ${snr >= 0 ? '+' : ''}${snr?.toFixed(0)}dB`;
+                label = `N/R: ${snr >= 0 ? '+' : ''}${snr?.toFixed(0)}dB`;
             }
 
             return <span style={{ color, fontWeight: 'bold', fontSize: '0.85rem' }}>{label}</span>;

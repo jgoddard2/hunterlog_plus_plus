@@ -20,6 +20,8 @@ export interface UserConfig {
     prop_refresh_minutes: number,
     prop_ssb_threshold: number,
     prop_digital_threshold: number,
+    prop_distance_scale_km: number,
+    prop_azimuth_scale_deg: number,
 }
 
 export interface ConfigVer2 {

@@ -4,9 +4,11 @@ import Tab from '@mui/material/Tab';
 import Box from '@mui/material/Box';
 import { ActivatorInfo } from './ActivatorInfo/ActivatorInfo';
 import ParkInfo from './Map/ParkInfo';
+import PropagationHistoryPanel from './PropagationHistory/PropagationHistoryPanel';
 import Stack from '@mui/material/Stack';
 import ParkIcon from '@mui/icons-material/Park';
 import PersonIcon from '@mui/icons-material/Person';
+import InsightsIcon from '@mui/icons-material/Insights';
 import { useAppContext } from './AppContext';
 import { checkApiResponse } from '../util';
 import Badge from '@mui/material/Badge';
@@ -115,6 +117,9 @@ export default function BasicTabs() {
                 <CustomTabPanel value={value} index={1}>
                     <ParkInfo />
                 </CustomTabPanel>
+                <CustomTabPanel value={value} index={2}>
+                    <PropagationHistoryPanel />
+                </CustomTabPanel>
                 <Tabs value={value}
                     onChange={handleChange}
                     aria-label="info tabs"
@@ -142,6 +147,11 @@ export default function BasicTabs() {
                         </Badge>
 
                     } {...a11yProps(1)} />
+                    <Tab label={
+                        <Tooltip title="Propagation History" >
+                            <InsightsIcon />
+                        </Tooltip>
+                    } {...a11yProps(2)} />
                 </Tabs>
             </Stack>
         </Box>

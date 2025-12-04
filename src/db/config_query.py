@@ -223,6 +223,24 @@ class ConfigQuery:
             'group': 'propagation',
             'enabled': 'True',
             'editable': 'True'
+        },
+        {
+            'key': 'prop_distance_scale_km',
+            'val': '3000',
+            'type': 'int',
+            'description': 'Propagation distance smoothing scale (km)',
+            'group': 'propagation',
+            'enabled': 'True',
+            'editable': 'True'
+        },
+        {
+            'key': 'prop_azimuth_scale_deg',
+            'val': '60',
+            'type': 'int',
+            'description': 'Propagation azimuth smoothing scale (deg)',
+            'group': 'propagation',
+            'enabled': 'True',
+            'editable': 'True'
         }
 
     ]

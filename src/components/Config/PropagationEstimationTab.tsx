@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { Box, TextField, Typography, Switch, FormControlLabel, MenuItem, Button, Alert } from '@mui/material';
+import { Box, TextField, Typography, Switch, FormControlLabel, MenuItem, Button, Alert, Slider, Tooltip, IconButton, Grid } from '@mui/material';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useConfigContext } from './ConfigContextProvider';
 
 export default function PropagationEstimationTab() {
@@ -40,6 +41,16 @@ export default function PropagationEstimationTab() {
         }
     };
 
+    const handleDistanceScaleChange = (_event: Event, value: number | number[]) => {
+        const val = Array.isArray(value) ? value[0] : value;
+        setConfig({ ...config, prop_distance_scale_km: val });
+    };
+
+    const handleAzimuthScaleChange = (_event: Event, value: number | number[]) => {
+        const val = Array.isArray(value) ? value[0] : value;
+        setConfig({ ...config, prop_azimuth_scale_deg: val });
+    };
+
     const handleTestConnection = async () => {
         setTestingConnection(true);
         setConnectionStatus('idle');
@@ -58,108 +69,165 @@ export default function PropagationEstimationTab() {
     };
 
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Typography variant="h6">Propagation Estimation</Typography>
 
             <Typography variant="body2" color="text.secondary">
-                Real-time propagation estimation based on digital mode reports.
+                Real-time propagation estimation based on digital-mode reception reports. Tune the refresh interval and smoothing to match your operating style.
             </Typography>
 
-            <FormControlLabel
-                control={
-                    <Switch
-                        checked={!!config.prop_enabled}
-                        onChange={handleEnabledChange}
-                    />
-                }
-                label="Enable Propagation Feature"
-            />
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Grid container spacing={2}>
+                    <Grid item xs={12} md={6}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={!!config.prop_enabled}
+                                        onChange={handleEnabledChange}
+                                    />
+                                }
+                                label="Enable Propagation Feature"
+                            />
 
-            <TextField
-                select
-                label="Data Source"
-                value={config.prop_data_source || 'pskreporter'}
-                onChange={handleDataSourceChange}
-                helperText="Select propagation data source"
-                disabled={!config.prop_enabled}
-                size="small"
-            >
-                <MenuItem value="pskreporter">PSKReporter (Recommended)</MenuItem>
-                <MenuItem value="wspr">WSPRnet</MenuItem>
-                <MenuItem value="rbn">Reverse Beacon Network</MenuItem>
-            </TextField>
+                            <TextField
+                                select
+                                label="Data Source"
+                                value={config.prop_data_source || 'pskreporter'}
+                                onChange={handleDataSourceChange}
+                                helperText="Select propagation data source"
+                                disabled={!config.prop_enabled}
+                                size="small"
+                            >
+                                <MenuItem value="pskreporter">PSKReporter (Recommended)</MenuItem>
+                                <MenuItem value="wspr">WSPRnet</MenuItem>
+                                <MenuItem value="rbn">Reverse Beacon Network</MenuItem>
+                            </TextField>
 
-            <TextField
-                label="Refresh Interval (minutes)"
-                type="number"
-                value={config.prop_refresh_minutes || 10}
-                onChange={handleRefreshMinutesChange}
-                helperText="How often to fetch data (1-60 min)"
-                inputProps={{ min: 1, max: 60 }}
-                disabled={!config.prop_enabled}
-                size="small"
-            />
+                            <TextField
+                                label="Refresh Interval (minutes)"
+                                type="number"
+                                value={config.prop_refresh_minutes || 10}
+                                onChange={handleRefreshMinutesChange}
+                                helperText="How often to fetch data (1-60 min)"
+                                inputProps={{ min: 1, max: 60 }}
+                                disabled={!config.prop_enabled}
+                                size="small"
+                            />
 
-            <Typography variant="subtitle2" sx={{ mt: 1 }}>SNR Thresholds</Typography>
+                            <Button
+                                variant="outlined"
+                                onClick={handleTestConnection}
+                                disabled={!config.prop_enabled || testingConnection}
+                                size="small"
+                                sx={{ alignSelf: 'flex-start' }}
+                            >
+                                {testingConnection ? 'Testing...' : 'Test Connection'}
+                            </Button>
 
-            <Box sx={{ display: 'flex', gap: 2 }}>
-                <TextField
-                    label="SSB (dB)"
-                    type="number"
-                    value={config.prop_ssb_threshold || 10}
-                    onChange={handleSsbThresholdChange}
-                    helperText="Min SNR for voice"
-                    disabled={!config.prop_enabled}
-                    size="small"
-                    sx={{ flex: 1 }}
-                />
+                            {connectionStatus === 'success' && (
+                                <Alert severity="success">Connected to {config.prop_data_source}!</Alert>
+                            )}
 
-                <TextField
-                    label="Digital (dB)"
-                    type="number"
-                    value={config.prop_digital_threshold || -15}
-                    onChange={handleDigitalThresholdChange}
-                    helperText="Min SNR for digital"
-                    disabled={!config.prop_enabled}
-                    size="small"
-                    sx={{ flex: 1 }}
-                />
-            </Box>
+                            {connectionStatus === 'error' && (
+                                <Alert severity="error">Connection failed. Check internet.</Alert>
+                            )}
+                        </Box>
+                    </Grid>
 
-            <Button
-                variant="outlined"
-                onClick={handleTestConnection}
-                disabled={!config.prop_enabled || testingConnection}
-                size="small"
-                sx={{ alignSelf: 'flex-start' }}
-            >
-                {testingConnection ? 'Testing...' : 'Test Connection'}
-            </Button>
+                    <Grid item xs={12} md={6}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                            <Box sx={{ display: 'flex', gap: 2 }}>
+                                <TextField
+                                    label="SSB (dB)"
+                                    type="number"
+                                    value={config.prop_ssb_threshold || 10}
+                                    onChange={handleSsbThresholdChange}
+                                    helperText="Min SNR for voice"
+                                    disabled={!config.prop_enabled}
+                                    size="small"
+                                    sx={{ flex: 1 }}
+                                />
 
-            {connectionStatus === 'success' && (
-                <Alert severity="success">Connected to {config.prop_data_source}!</Alert>
-            )}
+                                <TextField
+                                    label="Digital (dB)"
+                                    type="number"
+                                    value={config.prop_digital_threshold || -15}
+                                    onChange={handleDigitalThresholdChange}
+                                    helperText="Min SNR for digital"
+                                    disabled={!config.prop_enabled}
+                                    size="small"
+                                    sx={{ flex: 1 }}
+                                />
+                            </Box>
 
-            {connectionStatus === 'error' && (
-                <Alert severity="error">Connection failed. Check internet.</Alert>
-            )}
+                            <Box sx={{ p: 1.5, bgcolor: 'background.paper', borderRadius: 1 }}>
+                                <Typography variant="subtitle2" gutterBottom>Color Legend</Typography>
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.3 }}>
+                                    <Typography variant="body2">
+                                        <span style={{ color: 'green', fontWeight: 'bold' }}>Green</span> - SSB (SNR ≥ {config.prop_ssb_threshold || 10}dB)
+                                    </Typography>
+                                    <Typography variant="body2">
+                                        <span style={{ color: 'orange', fontWeight: 'bold' }}>Orange</span> - Digital (SNR ≥ {config.prop_digital_threshold || -15}dB)
+                                    </Typography>
+                                    <Typography variant="body2">
+                                        <span style={{ color: 'red', fontWeight: 'bold' }}>Red</span> - N/R (below digital threshold)
+                                    </Typography>
+                                    <Typography variant="body2">
+                                        <span style={{ color: 'black', fontWeight: 'bold' }}>Black</span> - No data
+                                    </Typography>
+                                </Box>
+                            </Box>
+                        </Box>
+                    </Grid>
 
-            <Box sx={{ mt: 1, p: 1.5, bgcolor: 'background.paper', borderRadius: 1 }}>
-                <Typography variant="subtitle2" gutterBottom>Color Legend:</Typography>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.3 }}>
-                    <Typography variant="body2">
-                        <span style={{ color: 'green', fontWeight: 'bold' }}>● Green</span> - SSB (SNR ≥ {config.prop_ssb_threshold || 10}dB)
-                    </Typography>
-                    <Typography variant="body2">
-                        <span style={{ color: 'orange', fontWeight: 'bold' }}>● Orange</span> - Digital (SNR ≥ {config.prop_digital_threshold || -15}dB)
-                    </Typography>
-                    <Typography variant="body2">
-                        <span style={{ color: 'red', fontWeight: 'bold' }}>● Red</span> - Not reachable
-                    </Typography>
-                    <Typography variant="body2">
-                        <span style={{ color: 'black', fontWeight: 'bold' }}>● Black</span> - No data
-                    </Typography>
-                </Box>
+                    <Grid item xs={12}>
+                        <Box sx={{ p: 1.5, bgcolor: 'background.default', borderRadius: 1 }}>
+                            <Typography variant="subtitle2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                Kernel Smoothing
+                                <Tooltip title="Lower values focus on paths very similar to yours; higher values blend more global reports.">
+                                    <IconButton size="small">
+                                        <InfoOutlinedIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                            </Typography>
+
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+                                <Box>
+                                    <Typography variant="body2">Distance scale (km)</Typography>
+                                    <Slider
+                                        value={config.prop_distance_scale_km || 3000}
+                                        onChange={handleDistanceScaleChange}
+                                        min={500}
+                                        max={6000}
+                                        step={250}
+                                        valueLabelDisplay="auto"
+                                        disabled={!config.prop_enabled}
+                                    />
+                                    <Typography variant="caption">
+                                        Larger numbers let distant reports influence predictions.
+                                    </Typography>
+                                </Box>
+
+                                <Box>
+                                    <Typography variant="body2">Azimuth scale (degrees)</Typography>
+                                    <Slider
+                                        value={config.prop_azimuth_scale_deg || 60}
+                                        onChange={handleAzimuthScaleChange}
+                                        min={10}
+                                        max={180}
+                                        step={5}
+                                        valueLabelDisplay="auto"
+                                        disabled={!config.prop_enabled}
+                                    />
+                                    <Typography variant="caption">
+                                        Higher values accept bigger differences in bearing.
+                                    </Typography>
+                                </Box>
+                            </Box>
+                        </Box>
+                    </Grid>
+                </Grid>
             </Box>
         </Box>
     );

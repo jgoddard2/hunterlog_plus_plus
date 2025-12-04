@@ -93,7 +93,6 @@ export const ActivatorInfo = (props: IActivatorInfoProps) => {
 
     }, [contextData.qso]);
 
-
     function copyMarkDown(event: React.MouseEvent<SVGSVGElement>) {
         if (contextData.qso == null) {
             return;
@@ -221,8 +220,8 @@ export const ActivatorInfo = (props: IActivatorInfoProps) => {
                         <div className='activatorCommentMetaData'>
                             <span className='activatorCmtsHdg'>Activator comments:</span>
                             <div className='activatorComments'>
-                                {actComments.map((comment) => (
-                                    <span>{comment}<br /></span>
+                                {actComments.map((comment, idx) => (
+                                    <span key={idx}>{comment}<br /></span>
                                 ))}
                             </div>
                         </div>

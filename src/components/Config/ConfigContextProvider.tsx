@@ -22,7 +22,9 @@ const defData: UserConfig = {
     prop_data_source: 'pskreporter',
     prop_refresh_minutes: 10,
     prop_ssb_threshold: 10,
-    prop_digital_threshold: -15
+    prop_digital_threshold: -15,
+    prop_distance_scale_km: 3000,
+    prop_azimuth_scale_deg: 60
 };
 
 export interface ConfigContextType {
@@ -57,7 +59,9 @@ export const ConfigContextProvider = ({ children }: any) => {
             prop_data_source: ctx.prop_data_source,
             prop_refresh_minutes: ctx.prop_refresh_minutes,
             prop_ssb_threshold: ctx.prop_ssb_threshold,
-            prop_digital_threshold: ctx.prop_digital_threshold
+            prop_digital_threshold: ctx.prop_digital_threshold,
+            prop_distance_scale_km: ctx.prop_distance_scale_km,
+            prop_azimuth_scale_deg: ctx.prop_azimuth_scale_deg
         };
         setConfigData(newContext);
     };

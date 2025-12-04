@@ -29,6 +29,8 @@ hr.titleSeparator {
 .activatorData {
     width: 100%;
     display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
     font-size: smaller;
     font-weight: 300;
     font-style: italic;
@@ -39,7 +41,7 @@ hr.titleSeparator {
 }
 
 .activatorCommentMetaData {
-    width: 50%;
+    width: 45%;
     font-size: smaller;
     font-weight: 300;
     font-style: italic;

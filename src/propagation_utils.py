@@ -188,7 +188,7 @@ def format_snr_display(snr: float, status: str) -> str:
     elif status == 'digital':
         return f"Digital: {snr:+.0f}dB"
     elif status == 'not_reachable':
-        return f"Not Reachable: {snr:+.0f}dB"
+        return f"N/R: {snr:+.0f}dB"
     else:
         return "Unknown"
 

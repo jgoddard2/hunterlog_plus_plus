@@ -50,6 +50,7 @@ class JsApi:
         self.current_band_id = 0
         self.prop_model_cache: dict[str, tuple[datetime.datetime, list]] = {}
         self.propagation_snapshot: dict[str, dict[str, dict[str, object]]] = {}
+        self.propagation_history: dict[str, list[dict[str, object]]] = {}
 
         logging.debug("init CAT...")
         lp = LoggerParams(
@@ -272,8 +273,15 @@ class JsApi:
                 
                 # Use kernel smoothing to predict SNR for each spot
                 reports_by_band = {band_name: prop_reports}
-                logging.info(f"[PROP MODEL] Building prediction model for {len(spot_paths)} active spots on {band_name}")
-                predictions = batch_predict_snr(spot_paths, reports_by_band)
+                distance_scale = self.db.config.get_value('prop_distance_scale_km') or 3000
+                azimuth_scale = self.db.config.get_value('prop_azimuth_scale_deg') or 60
+                logging.info(f"[PROP MODEL] Building prediction model for {len(spot_paths)} active spots on {band_name} (distance scale={distance_scale}km, azimuth scale={azimuth_scale}deg)")
+                predictions = batch_predict_snr(
+                    spot_paths,
+                    reports_by_band,
+                    distance_scale_km=float(distance_scale),
+                    azimuth_scale_deg=float(azimuth_scale)
+                )
                 
                 logging.info(f"[PROP FETCH] Generated {sum(1 for v in predictions.values() if v is not None)} SNR predictions")
                 
@@ -299,6 +307,7 @@ class JsApi:
                                 'status': spot.propagation_status,
                                 'updated': spot.propagation_updated
                             }
+                            self._append_propagation_history(spot_key, predicted_snr, spot.propagation_updated)
                             
                             # Log first few predictions
                             if update_count <= 3:
@@ -330,6 +339,20 @@ class JsApi:
         spot = self.db.spots.get_spot(spot_id)
         ss = SpotSchema()
         return ss.dumps(spot)
+
+    def get_propagation_history(self, spot_id: int):
+        """Return up to one hour of propagation predictions for a spot."""
+        spot = self.db.spots.get_spot(spot_id)
+        if spot is None:
+            return self._response(False, "spot not found", history=[])
+
+        key = self._propagation_snapshot_key(spot.activator, spot.reference)
+        history = self.propagation_history.get(key, [])
+        serialised = [
+            {'timestamp': entry['timestamp'].isoformat() + 'Z', 'snr': entry['snr']}
+            for entry in history
+        ]
+        return self._response(True, "", history=serialised)
 
     def get_spots(self):
         logging.debug('py get_spots')
@@ -1180,6 +1203,15 @@ class JsApi:
         act = (activator or '').upper()
         ref = (reference or '').upper()
         return f"{act}::{ref}"
+
+    def _append_propagation_history(self, spot_key: str, snr: float, timestamp: datetime.datetime):
+        """Append a propagation sample and prune history older than one hour."""
+        history = self.propagation_history.setdefault(spot_key, [])
+        history.append({'timestamp': timestamp, 'snr': snr})
+        cutoff = timestamp - datetime.timedelta(hours=1)
+        self.propagation_history[spot_key] = [
+            entry for entry in history if entry['timestamp'] >= cutoff
+        ]
 
     def _restore_cached_propagation(self) -> int:
         """

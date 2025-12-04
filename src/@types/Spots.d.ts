@@ -29,3 +29,8 @@ export interface SpotRow {
     cw_wpm: number,
     spot_source: string
 };
+
+export interface PropagationHistoryPoint {
+    timestamp: string,
+    snr: number
+}

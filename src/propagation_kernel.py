@@ -110,7 +110,9 @@ def calculate_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> flo
 
 def spot_weight(report: PropagationReport, 
                 target_dist_km: float,
-                target_az_deg: float) -> float:
+                target_az_deg: float,
+                distance_scale_km: float = D0_KM,
+                azimuth_scale_deg: float = T0_DEG) -> float:
     """
     Calculate similarity weight for a report relative to a target path.
     
@@ -125,21 +127,27 @@ def spot_weight(report: PropagationReport,
     Returns:
         Weight value between 0.0 and 1.0
     """
+    # Guard against zero scales
+    distance_scale = max(distance_scale_km, 1.0)
+    azimuth_scale = max(azimuth_scale_deg, 1.0)
+
     # Distance similarity
     delta_d = abs(report.distance_km - target_dist_km)
-    w_d = math.exp(-(delta_d / D0_KM) ** 2)
+    w_d = math.exp(-(delta_d / distance_scale) ** 2)
     
     # Azimuth similarity (handle wrap-around at 0/360)
     delta_theta_raw = abs(report.azimuth_deg - target_az_deg)
     delta_theta = min(delta_theta_raw, 360.0 - delta_theta_raw)
-    w_t = math.exp(-(delta_theta / T0_DEG) ** 2)
+    w_t = math.exp(-(delta_theta / azimuth_scale) ** 2)
     
     # Combined weight
     return w_d * w_t
 
 
 def predict_snr_for_spot(spot_path: SpotPath,
-                         reports: List[PropagationReport]) -> Optional[float]:
+                         reports: List[PropagationReport],
+                         distance_scale_km: float = D0_KM,
+                         azimuth_scale_deg: float = T0_DEG) -> Optional[float]:
     """
     Predict SNR for a single spot using kernel smoothing over all reports.
     
@@ -157,7 +165,13 @@ def predict_snr_for_spot(spot_path: SpotPath,
     weight_total = 0.0
     
     for report in reports:
-        w = spot_weight(report, spot_path.distance_km, spot_path.azimuth_deg)
+        w = spot_weight(
+            report,
+            spot_path.distance_km,
+            spot_path.azimuth_deg,
+            distance_scale_km,
+            azimuth_scale_deg
+        )
         
         # Skip reports with negligible weight
         if w < MIN_WEIGHT:
@@ -173,7 +187,9 @@ def predict_snr_for_spot(spot_path: SpotPath,
 
 
 def batch_predict_snr(spot_paths: List[SpotPath],
-                      reports_by_band: Dict[str, List[PropagationReport]]) -> Dict[int, float]:
+                      reports_by_band: Dict[str, List[PropagationReport]],
+                      distance_scale_km: float = D0_KM,
+                      azimuth_scale_deg: float = T0_DEG) -> Dict[int, float]:
     """
     Predict SNR for multiple spots efficiently.
     
@@ -191,7 +207,12 @@ def batch_predict_snr(spot_paths: List[SpotPath],
         reports = reports_by_band.get(spot_path.band, [])
         
         # Predict SNR
-        snr = predict_snr_for_spot(spot_path, reports)
+        snr = predict_snr_for_spot(
+            spot_path,
+            reports,
+            distance_scale_km,
+            azimuth_scale_deg
+        )
         predictions[spot_path.spot_id] = snr
     
     logging.debug(f"[KERNEL] Predicted SNR for {len(spot_paths)} spots, "
