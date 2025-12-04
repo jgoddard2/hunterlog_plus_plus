@@ -3,6 +3,7 @@ import time
 import webview
 import logging as L
 import datetime
+from typing import Optional
 import threading
 from datetime import timedelta
 
@@ -801,6 +802,14 @@ class JsApi:
         logging.debug(f"api setting SIG filter to: {sig_filter}")
         self.db.filters.set_sig_filter(sig_filter)
 
+    def set_snr_filter(self, snr_threshold: Optional[float]):
+        """
+        Set the minimum propagation SNR (in dB) required for spots.
+        Pass None to clear the filter.
+        """
+        logging.debug(f"api setting SNR filter to: {snr_threshold}")
+        self.db.filters.set_snr_filter(snr_threshold)
+
     def update_activator_stats(self, callsign: str) -> int:
         j = self.pota.get_activator_stats(callsign)
 
@@ -1218,33 +1227,33 @@ class JsApi:
         Reapply cached propagation predictions to freshly updated spots.
         Returns number of spots updated.
         """
-        band_id = self.db.filters.band_filter
-        if not band_id:
-            return 0
-        band_name = get_name_of_band(band_id)
-        if not band_name:
-            return 0
-
-        cache_key = band_name.lower()
-        band_cache = self.propagation_snapshot.get(cache_key)
-        if not band_cache:
+        if not self.propagation_snapshot:
             return 0
 
         spots = self.db.spots.get_spots()
+        if not spots:
+            return 0
+
         applied = 0
         for spot in spots:
             key = self._propagation_snapshot_key(spot.activator, spot.reference)
-            snapshot = band_cache.get(key)
-            if not snapshot:
+            restored = False
+            for band_name, band_cache in self.propagation_snapshot.items():
+                snapshot = band_cache.get(key)
+                if not snapshot:
+                    continue
+                spot.propagation_snr = snapshot.get('snr')
+                spot.propagation_status = snapshot.get('status')
+                spot.propagation_updated = snapshot.get('updated')
+                applied += 1
+                restored = True
+                break
+            if not restored:
                 continue
-            spot.propagation_snr = snapshot.get('snr')
-            spot.propagation_status = snapshot.get('status')
-            spot.propagation_updated = snapshot.get('updated')
-            applied += 1
 
         if applied:
             self.db.commit_session()
-            logging.info(f"[PROP RESTORE] Restored cached propagation data for {applied} spots on {band_name}")
+            logging.info(f"[PROP RESTORE] Restored cached propagation data for {applied} spots across {len(self.propagation_snapshot)} cached bands")
         return applied
 
     def _refresh_spots_frontend(self):

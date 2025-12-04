@@ -25,6 +25,7 @@ export const FilterBar = (props: IFilterBarPros) => {
     const [continent, setContinent] = React.useState<string[]>([]);
     const [loc, setLocation] = React.useState('');
     const [sig, setSig] = React.useState('');
+    const [snr, setSnr] = React.useState('');
     const [qrt, setQrt] = React.useState(true);
     const [hunted, setHunted] = React.useState(false);
     const [onlyNew, setOnlyNew] = React.useState(false);
@@ -60,6 +61,8 @@ export const FilterBar = (props: IFilterBarPros) => {
 
             let sf = window.localStorage.getItem("SIG_FILTER") || '';
             setSigFilter(sf);
+            let snrf = window.localStorage.getItem("SNR_FILTER") || '';
+            setSnrFilterValue(snrf);
         };
     }, []);
 
@@ -129,6 +132,12 @@ export const FilterBar = (props: IFilterBarPros) => {
         window.localStorage.setItem("SIG_FILTER", sig);
     }
 
+    const handleSnrChange = (event: SelectChangeEvent) => {
+        let value = event.target.value as string;
+        setSnrFilterValue(value);
+        window.localStorage.setItem("SNR_FILTER", value);
+    }
+
     const handleClear = () => {
         setMode("");
         setBand("0");
@@ -150,6 +159,7 @@ export const FilterBar = (props: IFilterBarPros) => {
         setHunted(false);
         setOnlyNew(false);
         setSig("");
+        setSnrFilterValue('');
 
         window.localStorage.setItem("BAND_FILTER", '0');
         window.localStorage.setItem("REGION_FILTER", '');
@@ -160,6 +170,7 @@ export const FilterBar = (props: IFilterBarPros) => {
         window.localStorage.setItem("HUNTED_FILTER", 'false');
         window.localStorage.setItem("ATNO_FILTER", 'false');
         window.localStorage.setItem("SIG_FILTER", '');
+        window.localStorage.setItem("SNR_FILTER", '');
 
         const next = {
             ...contextData,
@@ -169,7 +180,8 @@ export const FilterBar = (props: IFilterBarPros) => {
             qrtFilter: true,
             huntedFilter: false,
             onlyNew: false,
-            sigFilter: ''
+            sigFilter: '',
+            snrFilter: ''
         };
         setData(next);
 
@@ -279,6 +291,16 @@ export const FilterBar = (props: IFilterBarPros) => {
         setSig(sig);
     }
 
+    function setSnrFilterValue(value: string) {
+        const threshold = value === '' ? null : parseFloat(value);
+        if (window.pywebview?.api?.set_snr_filter) {
+            window.pywebview.api.set_snr_filter(threshold);
+        }
+        let next = { ...contextData, snrFilter: value };
+        setData(next);
+        setSnr(value);
+    }
+
 
     const StyledTypoGraphy = styled(Typography)(({ theme }) =>
         theme.unstable_sx({
@@ -360,6 +382,30 @@ export const FilterBar = (props: IFilterBarPros) => {
                         <MenuItem value='FM'>FM</MenuItem>
                         <MenuItem value='FT8'>FT8</MenuItem>
                         <MenuItem value='FT4'>FT4</MenuItem>
+                    </Select>
+                </FormControl>
+                <FormControl size='small'>
+                    <StyledInputLabel id="snr-label">SNR</StyledInputLabel>
+                    <Select
+                        labelId="snr-label"
+                        id="snr-select"
+                        value={snr}
+                        variant='standard'
+                        sx={{ minWidth: 110 }}
+                        onChange={handleSnrChange}
+                    >
+                        <MenuItem value=""><em>None</em></MenuItem>
+                        <MenuItem value='-30'>-30 dB & up</MenuItem>
+                        <MenuItem value='-25'>-25 dB & up</MenuItem>
+                        <MenuItem value='-20'>-20 dB & up</MenuItem>
+                        <MenuItem value='-15'>-15 dB & up</MenuItem>
+                        <MenuItem value='-10'>-10 dB & up</MenuItem>
+                        <MenuItem value='-5'>-5 dB & up</MenuItem>
+                        <MenuItem value='0'>0 dB & up</MenuItem>
+                        <MenuItem value='1'>1 dB & up</MenuItem>
+                        <MenuItem value='5'>5 dB & up</MenuItem>
+                        <MenuItem value='10'>10 dB & up</MenuItem>
+                        <MenuItem value='15'>15 dB & up</MenuItem>
                     </Select>
                 </FormControl>
                 <FormControl size='small'>

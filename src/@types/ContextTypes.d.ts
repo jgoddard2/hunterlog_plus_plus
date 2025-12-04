@@ -22,6 +22,7 @@ export interface ContextData {
     themeMode: string;
     onlyNewFilter: boolean;
     sigFilter: string;
+    snrFilter: string;
     otherOperators: string;
     otherParks: string;
     continentFilter: string;

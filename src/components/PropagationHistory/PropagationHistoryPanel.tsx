@@ -5,7 +5,6 @@ import Tooltip from '@mui/material/Tooltip';
 import RefreshIcon from '@mui/icons-material/Refresh';
 
 import { useAppContext } from '../AppContext';
-import { checkApiResponse } from '../../util';
 import { PropagationHistoryPoint } from '../../@types/Spots';
 
 import './PropagationHistoryPanel.scss';
@@ -97,6 +96,8 @@ const PropagationHistoryChart = ({ data }: ChartProps) => {
                     y={0}
                     width={DEFAULT_WIDTH}
                     height={DEFAULT_HEIGHT}
+                    rx={10}
+                    ry={10}
                     className='propagationChartBackground'
                 />
                 {gridLines.map((value) => {
@@ -188,6 +189,7 @@ const PropagationHistoryPanel = () => {
     const [history, setHistory] = React.useState<PropagationHistoryPoint[]>([]);
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
+    const [infoMessage, setInfoMessage] = React.useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null);
 
     const ctxRef = React.useRef(contextData);
@@ -196,27 +198,66 @@ const PropagationHistoryPanel = () => {
     }, [contextData]);
 
     const spotId = contextData.spotId;
+    React.useEffect(() => {
+        setInfoMessage(null);
+        if (!spotId) {
+            setHistory([]);
+            setError(null);
+            setLastUpdated(null);
+            lastSuccessfulSpotId.current = null;
+            return;
+        }
+        // When the user selects a new spot, clear stale history until fresh data arrives.
+        setHistory([]);
+        setError(null);
+        lastSuccessfulSpotId.current = null;
+    }, [spotId]);
+    const lastSuccessfulSpotId = React.useRef<number | null>(null);
 
     const fetchHistory = React.useCallback(() => {
         if (!window.pywebview || !window.pywebview.api || !spotId) {
             setHistory([]);
             setError(null);
+            setInfoMessage(null);
             setLastUpdated(null);
             return;
         }
 
         setLoading(true);
         setError(null);
+        setInfoMessage(null);
+
+        const requestedSpotId = spotId;
 
         window.pywebview.api.get_propagation_history(spotId)
             .then((response: string) => {
-                const payload = checkApiResponse(response, ctxRef.current, setData);
-                if (!payload || payload.success === false) {
+                let payload: { success: boolean; message?: string; history?: PropagationHistoryPoint[] };
+                try {
+                    payload = JSON.parse(response);
+                } catch {
+                    setError('Invalid propagation response.');
                     setHistory([]);
-                    if (payload && payload.message) {
-                        setError(payload.message);
+                    setLastUpdated(null);
+                    lastSuccessfulSpotId.current = null;
+                    return;
+                }
+
+                if (!payload.success) {
+                    if (payload.message === 'spot not found') {
+                        if (lastSuccessfulSpotId.current === requestedSpotId) {
+                            setInfoMessage('Spot no longer available; showing last known data.');
+                            setError(null);
+                        } else {
+                            setHistory([]);
+                            setError('Spot not found.');
+                            setLastUpdated(null);
+                            lastSuccessfulSpotId.current = null;
+                        }
                     } else {
-                        setError('No propagation history available.');
+                        setHistory([]);
+                        setError(payload.message || 'No propagation history available.');
+                        setLastUpdated(null);
+                        lastSuccessfulSpotId.current = null;
                     }
                     return;
                 }
@@ -231,13 +272,19 @@ const PropagationHistoryPanel = () => {
 
                 setHistory(sorted);
                 setLastUpdated(new Date());
+                lastSuccessfulSpotId.current = requestedSpotId;
+                setError(null);
+                setInfoMessage(null);
             })
             .catch(() => {
                 setError('Unable to retrieve propagation history.');
+                setInfoMessage(null);
                 setHistory([]);
+                setLastUpdated(null);
+                lastSuccessfulSpotId.current = null;
             })
             .finally(() => setLoading(false));
-    }, [spotId, setData]);
+    }, [spotId]);
 
     React.useEffect(() => {
         fetchHistory();
@@ -297,6 +344,10 @@ const PropagationHistoryPanel = () => {
 
             {spotId && error && (
                 <div className='propagation-history-panel__error'>{error}</div>
+            )}
+
+            {spotId && infoMessage && (
+                <div className='propagation-history-panel__info'>{infoMessage}</div>
             )}
 
             {spotId && !error && (

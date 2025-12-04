@@ -1,5 +1,6 @@
 import logging as L
 import sqlalchemy as sa
+from typing import Optional
 from bands import Bands
 from db.models.spots import Spot
 from db.qso_query import QsoQuery
@@ -16,6 +17,8 @@ class Filters:
         self.hunted_filter_on = False  # filter out spots you hunted
         self.only_new_on = False  # filter out parks you have never worked
         self.cont_filter = list[str]()
+        self.sig_filter = ''
+        self.snr_threshold = None
 
     def set_band_filter(self, band: Bands):
         logging.debug(f"setting band filter to {band}")
@@ -48,6 +51,10 @@ class Filters:
     def set_sig_filter(self, sig: str):
         self.sig_filter = sig
 
+    def set_snr_filter(self, snr_threshold: Optional[float]):
+        logging.debug(f"setting SNR filter to {snr_threshold}")
+        self.snr_threshold = snr_threshold
+
     def get_and_filters(self) -> list[sa.ColumnElement[bool]]:
         '''
         Gets all the search terms that should be boolean and-ed together when
@@ -58,7 +65,8 @@ class Filters:
             self._get_qrt_filter() + \
             self._get_hunted_filter() + \
             self._get_only_new_filter() + \
-            self._get_sig_filter()
+            self._get_sig_filter() + \
+            self._get_snr_filter()
 
     def get_or_filters(self) -> list[sa.ColumnElement[bool]]:
         '''
@@ -132,3 +140,13 @@ class Filters:
             return []
         terms = [Spot.spot_source == sig]
         return terms
+
+    def _get_snr_filter(self) -> list[sa.ColumnElement[bool]]:
+        if self.snr_threshold is None:
+            return []
+        return [
+            sa.and_(
+                Spot.propagation_snr.isnot(None),
+                Spot.propagation_snr >= float(self.snr_threshold)
+            )
+        ]
