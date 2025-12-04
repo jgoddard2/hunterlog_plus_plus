@@ -334,6 +334,36 @@ class JsApi:
         except Exception as e:
             logging.error(f"[PROP FETCH] Error in propagation background worker: {e}", exc_info=True)
 
+    def ensure_propagation_landscape(self) -> str:
+        """
+        Ensure propagation predictions exist for the currently selected band.
+        If a cached landscape exists, apply it to any spots that are still missing
+        data; otherwise kick off a background fetch immediately.
+        """
+        try:
+            if not self.db.config.get_value('prop_enabled'):
+                return self._response(False, "Propagation is disabled")
+
+            band_id = self.db.filters.band_filter
+            if band_id is None or band_id == 0:
+                return self._response(False, "No band selected")
+
+            band_name = get_name_of_band(band_id)
+            cache_key = band_name.lower()
+            snapshot = self.propagation_snapshot.get(cache_key)
+
+            if snapshot:
+                updated = self._apply_landscape_to_missing_spots(band_name)
+                if updated:
+                    self._refresh_spots_frontend()
+                return self._response(True, "", action="restored", updated=updated)
+
+            logging.info(f"[PROP FETCH] No cached landscape for {band_name}; triggering fresh propagation build")
+            self.trigger_propagation_fetch(band_id)
+            return self._response(True, "", action="fetching", updated=0)
+        except Exception as ex:
+            logging.error("Error ensuring propagation landscape", exc_info=ex)
+            return self._response(False, "Unable to ensure propagation landscape")
 
     def get_spot(self, spot_id: int):
         logging.debug('py get_spot')
@@ -753,6 +783,11 @@ class JsApi:
     def set_user_config2(self, config2_json: any):
         logging.debug(f"setting config2 {config2_json}")
         # self.db.update_user_config(config2_json)
+        try:
+            prev_prop_enabled = self.db.config.get_value('prop_enabled')
+        except KeyError:
+            prev_prop_enabled = False
+
         self.db.config.set_editable_json(config2_json)
 
         lp = LoggerParams(
@@ -764,6 +799,18 @@ class JsApi:
         )
         self.adif_log = LoggerInterface.get_logger(lp, __version__)
         logging.debug(f"updating logger {self.adif_log}")
+
+        try:
+            new_prop_enabled = self.db.config.get_value('prop_enabled')
+            if not prev_prop_enabled and new_prop_enabled:
+                band_id = self.db.filters.band_filter
+                if band_id and band_id != 0:
+                    logging.info("[PROP FETCH] Propagation enabled via config; priming landscape for current band")
+                    self.trigger_propagation_fetch(band_id)
+                else:
+                    logging.info("[PROP FETCH] Propagation enabled but no band is selected; skipping automatic fetch")
+        except Exception as ex:
+            logging.error("Error triggering propagation fetch after enabling propagation", exc_info=ex)
 
     def set_band_filter(self, band: int):
         logging.debug(f"api setting band filter to: {band}")
@@ -1212,6 +1259,53 @@ class JsApi:
         act = (activator or '').upper()
         ref = (reference or '').upper()
         return f"{act}::{ref}"
+
+    def _apply_landscape_to_missing_spots(self, band_name: str) -> int:
+        """
+        Apply cached propagation values for the provided band to spots that
+        currently show "No Reports".
+        """
+        cache_key = band_name.lower()
+        snapshot = self.propagation_snapshot.get(cache_key)
+        if not snapshot:
+            return 0
+
+        logging.debug(f"[PROP RESTORE] Attempting to apply cached landscape for {band_name}")
+
+        acquired = self.lock.acquire(timeout=4.0)
+        if not acquired:
+            logging.warning("[PROP RESTORE] Could not acquire lock to apply cached landscape")
+            return 0
+
+        try:
+
+            spots = self.db.spots.get_spots()
+            if not spots:
+                return 0
+
+            updated = 0
+            for spot in spots:
+                status = getattr(spot, 'propagation_status', None)
+                if status not in (None, '', 'no_data'):
+                    continue
+
+                key = self._propagation_snapshot_key(spot.activator, spot.reference)
+                cached = snapshot.get(key)
+                if not cached:
+                    continue
+
+                spot.propagation_snr = cached.get('snr')
+                spot.propagation_status = cached.get('status')
+                spot.propagation_updated = cached.get('updated')
+                updated += 1
+
+            if updated:
+                self.db.commit_session()
+                logging.info(f"[PROP RESTORE] Populated propagation data for {updated} spots on {band_name} from cached landscape")
+            return updated
+        finally:
+            if acquired:
+                self.lock.release()
 
     def _append_propagation_history(self, spot_key: str, snr: float, timestamp: datetime.datetime):
         """Append a propagation sample and prune history older than one hour."""

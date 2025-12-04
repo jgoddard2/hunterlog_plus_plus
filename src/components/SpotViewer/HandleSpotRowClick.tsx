@@ -5,6 +5,7 @@ import { Qso } from "../../@types/QsoTypes";
 import { SpotComments } from "../../@types/SpotComments";
 import { useAppContext } from "../AppContext";
 import { checkApiResponse } from '../../util';
+import { useConfigContext } from '../Config/ConfigContextProvider';
 
 interface MultiData {
     otherOps: string;
@@ -23,6 +24,7 @@ interface MultiData {
 export default function HandleSpotRowClick() {
 
     const { contextData, setData } = useAppContext();
+    const { config } = useConfigContext();
     const [isWorking, setIsWorking] = useState(false);
 
     async function getOtherData(spotId: number): Promise<MultiData> {
@@ -145,13 +147,33 @@ export default function HandleSpotRowClick() {
 
 
     useEffect(() => {
-        if (!isWorking) {
-            setIsWorking(true);
-            loadSpotData(contextData.spotId);
-        } else {
+        if (isWorking) {
             console.log('re-entry prevented on spot row click');
+            return;
         }
+
+        let cancelled = false;
+
+        const run = async () => {
+            setIsWorking(true);
+
+            if (config.prop_enabled && window.pywebview?.api?.ensure_propagation_landscape) {
+                try {
+                    await window.pywebview.api.ensure_propagation_landscape();
+                } catch (error) {
+                    console.error('Failed to ensure propagation landscape before loading spot data', error);
+                }
+            }
+
+            if (!cancelled) {
+                loadSpotData(contextData.spotId);
+            }
+        };
+
+        run();
+
         return () => {
+            cancelled = true;
             setIsWorking(false);
         }
     }, [contextData.spotId]);
