@@ -58,11 +58,9 @@ class PSKReporterClient:
         """
         self._rate_limit()
         
-        # Calculate time range
-        flow_start = datetime.utcnow() - timedelta(minutes=minutes)
-        
         params = {
-            'flowStartSeconds': int(flow_start.timestamp()),
+            # PSKReporter expects a negative offset relative to "now"
+            'flowStartSeconds': -int(minutes * 60),
             'noactive': '1',  # Exclude senders who are currently active
             'nolocator': '0',  # Include records with locators
             'rronly': '1',    # Reception reports only
@@ -89,7 +87,8 @@ class PSKReporterClient:
         self,
         rx_grid: str,
         band: Optional[str] = None,
-        minutes: int = 15
+        minutes: int = 15,
+        mode: Optional[str] = None
     ) -> List[Dict]:
         """
         Fetch recent global reception reports for kernel smoothing.
@@ -101,24 +100,25 @@ class PSKReporterClient:
             rx_grid: User's grid square (not used for filtering, kept for API compatibility)
             band: Optional band filter
             minutes: Minutes to look back
+            mode: Optional mode filter (leave None to include all)
             
         Returns:
             List of reception reports with path geometry
         """
         self._rate_limit()
         
-        flow_start = datetime.utcnow() - timedelta(minutes=minutes)
-        
         params = {
-            'flowStartSeconds': int(flow_start.timestamp()),
-            'mode': 'FT8',  # FT8 provides most data
+            # PSKReporter expects negative seconds relative to now
+            'flowStartSeconds': -int(minutes * 60),
             'rptlimit': 2000,  # Limit to prevent overload
             'rronly': 1,
             'noactive': 1,
             # NOTE: NOT filtering by receiverLocator to get global data
         }
+        if mode:
+            params['mode'] = mode
         
-        logging.info(f"[PROP FETCH] PSKReporter API query: GLOBAL (no grid filter), band={band}, minutes={minutes}")
+        logging.info(f"[PROP FETCH] PSKReporter API query: GLOBAL (no grid filter), band={band}, mode={mode or 'any'}, minutes={minutes}")
         logging.info(f"[PROP FETCH] PSKReporter params: {params}")
         
         try:
@@ -325,6 +325,27 @@ class PropagationDataFetcher:
             List of propagation reports
         """
         return self.client.fetch_recent_reports(minutes=minutes)
+    
+    def fetch_reception_reports(
+        self,
+        rx_grid: str,
+        band: Optional[str] = None,
+        minutes: int = 15,
+        mode: Optional[str] = None
+    ) -> List[Dict]:
+        """
+        Fetch recent reception reports for global kernel smoothing.
+        
+        Args:
+            rx_grid: User's grid square (kept for API compatibility)
+            band: Optional band filter (e.g., "20m")
+            minutes: Look-back window in minutes
+            mode: Optional PSKReporter mode parameter (None = include all)
+        
+        Returns:
+            List of reception reports with geometry metadata.
+        """
+        return self.client.fetch_reception_reports(rx_grid, band, minutes, mode)
     
     def query_path(
         self,

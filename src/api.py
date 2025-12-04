@@ -48,6 +48,8 @@ class JsApi:
         # Propagation tracking
         self.last_prop_update = None
         self.current_band_id = 0
+        self.prop_model_cache: dict[str, tuple[datetime.datetime, list]] = {}
+        self.propagation_snapshot: dict[str, dict[str, dict[str, object]]] = {}
 
         logging.debug("init CAT...")
         lp = LoggerParams(
@@ -77,13 +79,14 @@ class JsApi:
         """
         try:
             # Check if feature is enabled
-            if self.db.config.get_value('prop_enabled') != 'True':
+            prop_enabled = self.db.config.get_value('prop_enabled')
+            logging.info("prop_enabled: %s", prop_enabled)
+            if not prop_enabled:
+                logging.info("Propagation is disabled")
                 return
             
             # Get refresh interval in minutes
-            refresh_minutes = self.db.config.get_value('prop_refresh_minutes')
-            if not refresh_minutes:
-                refresh_minutes = 10  # Default fallback
+            refresh_minutes = self.db.config.get_value('prop_refresh_minutes') or 10
             
             # Check if enough time has passed since last update
             now = datetime.datetime.now()
@@ -115,7 +118,9 @@ class JsApi:
         """
         try:
             # Check if feature is enabled
-            if self.db.config.get_value('prop_enabled') != 'True':
+            prop_enabled = self.db.config.get_value('prop_enabled')
+            logging.info("prop_enabled: %s", prop_enabled)
+            if not prop_enabled:
                 return
 
             # Get user grid
@@ -154,56 +159,75 @@ class JsApi:
             
             logging.info(f"[PROP FETCH] Starting kernel smoothing propagation fetch for band={band_name}, rx_grid={my_grid}")
             
-            # Fetch global reports (not filtered by user grid)
-            reports = self.prop_fetcher.fetch_reception_reports(
-                rx_grid=my_grid,  # Kept for API compatibility, not used for filtering
-                band=band_name,
-                minutes=15
-            )
+            refresh_minutes = self.db.config.get_value('prop_refresh_minutes') or 10
+            cache_key = band_name.lower()
+            now = datetime.datetime.utcnow()
+            cached_entry = self.prop_model_cache.get(cache_key)
+            prop_reports = None
             
-            logging.info(f"[PROP FETCH] Received {len(reports)} global propagation reports")
+            if cached_entry:
+                cached_time, cached_reports = cached_entry
+                age_minutes = (now - cached_time).total_seconds() / 60.0
+                if age_minutes < refresh_minutes:
+                    prop_reports = cached_reports
+                    logging.info(f"[PROP FETCH] Using cached propagation dataset for {band_name} (age {age_minutes:.1f} min < {refresh_minutes})")
             
-            if not reports:
-                logging.info("[PROP FETCH] No propagation reports found")
-                return
+            if prop_reports is None:
+                # Fetch global reports (not filtered by user grid)
+                reports = self.prop_fetcher.fetch_reception_reports(
+                    rx_grid=my_grid,  # Kept for API compatibility, not used for filtering
+                    band=band_name,
+                    minutes=refresh_minutes
+                )
+                
+                logging.info(f"[PROP FETCH] Received {len(reports)} global propagation reports")
+                
+                if not reports:
+                    logging.info("[PROP FETCH] No propagation reports found")
+                    self.prop_model_cache.pop(cache_key, None)
+                    self.propagation_snapshot.pop(cache_key, None)
+                    return
 
-            # Log first few reports for debugging
-            for i, r in enumerate(reports[:3]):
-                logging.info(f"[PROP FETCH] Report {i+1}: {r.get('tx_call')} ({r.get('tx_grid')}) -> {r.get('rx_call')} ({r.get('rx_grid')}), snr={r.get('snr')}dB, distance={r.get('distance_km'):.0f}km, azimuth={r.get('azimuth_deg', 0):.0f}°")
-            
-            if len(reports) > 3:
-                logging.info(f"[PROP FETCH] ... and {len(reports) - 3} more reports")
+                # Log first few reports for debugging
+                for i, r in enumerate(reports[:3]):
+                    logging.info(f"[PROP FETCH] Report {i+1}: {r.get('tx_call')} ({r.get('tx_grid')}) -> {r.get('rx_call')} ({r.get('rx_grid')}), snr={r.get('snr')}dB, distance={r.get('distance_km'):.0f}km, azimuth={r.get('azimuth_deg', 0):.0f}deg")
+                
+                if len(reports) > 3:
+                    logging.info(f"[PROP FETCH] ... and {len(reports) - 3} more reports")
 
-            # Convert reports to PropagationReport objects
-            prop_reports = []
-            for r in reports:
-                try:
-                    # Calculate azimuth if not present
-                    azimuth = r.get('azimuth_deg', 0)
-                    if azimuth == 0 and r.get('tx_grid') and r.get('rx_grid'):
-                        azimuth = calculate_bearing(r.get('tx_grid'), r.get('rx_grid'))
-                    
-                    prop_report = PropagationReport(
-                        timestamp_utc=r.get('timestamp', ''),
-                        band=r.get('band', band_name),
-                        snr_db=r.get('snr', 0.0),
-                        tx_call=r.get('tx_call', ''),
-                        tx_grid=r.get('tx_grid', ''),
-                        tx_lat=r.get('tx_lat', 0.0),
-                        tx_lon=r.get('tx_lon', 0.0),
-                        rx_call=r.get('rx_call', ''),
-                        rx_grid=r.get('rx_grid', ''),
-                        rx_lat=r.get('rx_lat', 0.0),
-                        rx_lon=r.get('rx_lon', 0.0),
-                        distance_km=r.get('distance_km', 0.0),
-                        azimuth_deg=azimuth
-                    )
-                    prop_reports.append(prop_report)
-                except Exception as ex:
-                    logging.debug(f"[PROP FETCH] Error converting report: {ex}")
-                    continue
-            
-            logging.info(f"[PROP FETCH] Converted {len(prop_reports)} reports for kernel smoothing")
+                # Convert reports to PropagationReport objects
+                prop_reports = []
+                for r in reports:
+                    try:
+                        # Calculate azimuth if not present
+                        azimuth = r.get('azimuth_deg', 0)
+                        if azimuth == 0 and r.get('tx_grid') and r.get('rx_grid'):
+                            azimuth = calculate_bearing(r.get('tx_grid'), r.get('rx_grid'))
+                        
+                        prop_report = PropagationReport(
+                            timestamp_utc=r.get('timestamp', ''),
+                            band=r.get('band', band_name),
+                            snr_db=r.get('snr', 0.0),
+                            tx_call=r.get('tx_call', ''),
+                            tx_grid=r.get('tx_grid', ''),
+                            tx_lat=r.get('tx_lat', 0.0),
+                            tx_lon=r.get('tx_lon', 0.0),
+                            rx_call=r.get('rx_call', ''),
+                            rx_grid=r.get('rx_grid', ''),
+                            rx_lat=r.get('rx_lat', 0.0),
+                            rx_lon=r.get('rx_lon', 0.0),
+                            distance_km=r.get('distance_km', 0.0),
+                            azimuth_deg=azimuth
+                        )
+                        prop_reports.append(prop_report)
+                    except Exception as ex:
+                        logging.debug(f"[PROP FETCH] Error converting report: {ex}")
+                        continue
+                
+                logging.info(f"[PROP FETCH] Converted {len(prop_reports)} reports for kernel smoothing (prediction dataset ready)")
+                self.prop_model_cache[cache_key] = (now, prop_reports)
+            else:
+                logging.info(f"[PROP FETCH] Reusing {len(prop_reports)} cached propagation reports for kernel smoothing")
             
             # Get current spots from database (only active, non-QRT)
             try:
@@ -248,6 +272,7 @@ class JsApi:
                 
                 # Use kernel smoothing to predict SNR for each spot
                 reports_by_band = {band_name: prop_reports}
+                logging.info(f"[PROP MODEL] Building prediction model for {len(spot_paths)} active spots on {band_name}")
                 predictions = batch_predict_snr(spot_paths, reports_by_band)
                 
                 logging.info(f"[PROP FETCH] Generated {sum(1 for v in predictions.values() if v is not None)} SNR predictions")
@@ -258,6 +283,7 @@ class JsApi:
                 
                 # Update spots with predictions
                 update_count = 0
+                band_snapshot: dict[str, dict[str, object]] = {}
                 for spot_id, predicted_snr in predictions.items():
                     spot = self.db.spots.get_spot(spot_id)
                     if spot:
@@ -266,6 +292,13 @@ class JsApi:
                             spot.propagation_status = classify_snr(predicted_snr, ssb_threshold, digital_threshold)
                             spot.propagation_updated = datetime.datetime.utcnow()
                             update_count += 1
+                            
+                            spot_key = self._propagation_snapshot_key(spot.activator, spot.reference)
+                            band_snapshot[spot_key] = {
+                                'snr': predicted_snr,
+                                'status': spot.propagation_status,
+                                'updated': spot.propagation_updated
+                            }
                             
                             # Log first few predictions
                             if update_count <= 3:
@@ -276,7 +309,13 @@ class JsApi:
                 
                 self.db.commit_session()
                 
-                logging.info(f"[PROP FETCH] Successfully updated {update_count} spots with predicted SNR")
+                logging.info(f"[PROP FETCH] Successfully updated {update_count} spots with predicted SNR; committing propagation landscape")
+                if band_snapshot:
+                    self.propagation_snapshot[cache_key] = band_snapshot
+                else:
+                    self.propagation_snapshot.pop(cache_key, None)
+                
+                self._refresh_spots_frontend()
                 
             finally:
                 if self.lock.locked():
@@ -967,6 +1006,7 @@ class JsApi:
             self.programs["WWFF"].update_spots(wwff)
             self.db.session.commit()
             logging.info("spots updated for programs")
+            self._restore_cached_propagation()
             self.lock.release()
             logging.info("update lock released")
 
@@ -1134,3 +1174,53 @@ class JsApi:
                 """.format(obj=json.dumps(res))
             # logging.debug(f"alerting w this {js}")
             webview.windows[0].evaluate_js(js)
+
+    def _propagation_snapshot_key(self, activator: str, reference: str) -> str:
+        """Build a stable key for caching propagation data."""
+        act = (activator or '').upper()
+        ref = (reference or '').upper()
+        return f"{act}::{ref}"
+
+    def _restore_cached_propagation(self) -> int:
+        """
+        Reapply cached propagation predictions to freshly updated spots.
+        Returns number of spots updated.
+        """
+        band_id = self.db.filters.band_filter
+        if not band_id:
+            return 0
+        band_name = get_name_of_band(band_id)
+        if not band_name:
+            return 0
+
+        cache_key = band_name.lower()
+        band_cache = self.propagation_snapshot.get(cache_key)
+        if not band_cache:
+            return 0
+
+        spots = self.db.spots.get_spots()
+        applied = 0
+        for spot in spots:
+            key = self._propagation_snapshot_key(spot.activator, spot.reference)
+            snapshot = band_cache.get(key)
+            if not snapshot:
+                continue
+            spot.propagation_snr = snapshot.get('snr')
+            spot.propagation_status = snapshot.get('status')
+            spot.propagation_updated = snapshot.get('updated')
+            applied += 1
+
+        if applied:
+            self.db.commit_session()
+            logging.info(f"[PROP RESTORE] Restored cached propagation data for {applied} spots on {band_name}")
+        return applied
+
+    def _refresh_spots_frontend(self):
+        """Trigger a spot refresh in the frontend after propagation updates."""
+        try:
+            if len(webview.windows) == 0:
+                return
+            js = """if (window.pywebview.state && window.pywebview.state.getSpots) { window.pywebview.state.getSpots(); }"""
+            webview.windows[0].evaluate_js(js)
+        except Exception as ex:
+            logging.error("error refreshing frontend after propagation update", exc_info=ex)
