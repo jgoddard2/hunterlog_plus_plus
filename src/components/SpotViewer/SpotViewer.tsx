@@ -312,7 +312,7 @@ export default function SpotViewer() {
         [contextData.bandFilter, contextData.regionFilter,
         contextData.qrtFilter, contextData.locationFilter,
         contextData.huntedFilter, contextData.onlyNewFilter,
-        contextData.continentFilter]
+        contextData.continentFilter, contextData.snrFilter]
     );
 
     // return the correct PK id for our rows

@@ -147,7 +147,7 @@ if __name__ == '__main__':
     mimetypes.add_type("application/javascript", ".js")
 
     window = webview.create_window(
-        'HUNTER LOG',
+        'HUNER LOG++',
         entry,
         js_api=the_api,
         maximized=maxi,
