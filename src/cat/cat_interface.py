@@ -7,6 +7,7 @@ GPL V3
 import logging
 import socket
 import xmlrpc.client
+from typing import Optional
 
 from cat.icat import ICat
 from cat.aclog_interface import aclog
@@ -451,12 +452,12 @@ class CAT:
         return False
 
 
-    def set_mode(self, mode: str) -> bool:
+    def set_mode(self, mode: str, bandwidth: Optional[int] = None) -> bool:
         """Sets the radios mode"""
         if self.interface == "flrig":
-            return self.__setmode_flrig(mode)
+            return self.__setmode_flrig(mode, bandwidth)
         if self.interface == "rigctld":
-            return self.__setmode_rigctld(mode)
+            return self.__setmode_rigctld(mode, bandwidth)
         if self.interface == "aclog":
             return self.__setmode_aclog(mode)
         if self.interface == "dxlabs":
@@ -464,22 +465,29 @@ class CAT:
 
         return False
 
-    def __setmode_flrig(self, mode: str) -> bool:
+    def __setmode_flrig(self, mode: str, bandwidth: Optional[int] = None) -> bool:
         """Sets the radios mode"""
         try:
             self.online = True
-            return self.server.rig.set_mode(mode)
+            result = self.server.rig.set_mode(mode)
+            if bandwidth is not None:
+                try:
+                    self.server.rig.set_bw(int(bandwidth))
+                except Exception as ex:  # noqa: BLE001
+                    logger.debug("legacy setmode_flrig bandwidth", exc_info=ex)
+            return result
         except ConnectionRefusedError as exception:
             self.online = False
             logger.debug("setmode_flrig: %s", exception)
         return False
 
-    def __setmode_rigctld(self, mode: str) -> bool:
+    def __setmode_rigctld(self, mode: str, bandwidth: Optional[int] = None) -> bool:
         """sets the radios mode"""
         if self.rigctrlsocket:
             try:
                 self.online = True
-                self.rigctrlsocket.send(bytes(f"M {mode} 0\n", "utf-8"))
+                width = bandwidth if bandwidth is not None else 0
+                self.rigctrlsocket.send(bytes(f"M {mode} {width}\n", "utf-8"))
                 _ = self.rigctrlsocket.recv(1024).decode().strip()
                 return True
             except socket.error as exception:

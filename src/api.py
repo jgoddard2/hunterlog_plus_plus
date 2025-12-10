@@ -1238,10 +1238,25 @@ class JsApi:
         elif mode.startswith("FT"):
             mode = self.db.config.get_value('ftx_mode')
         logging.debug(f"adjusted mode {mode}")
-        self.cat.set_mode(mode)
+        bandwidth = self._preferred_filter_width(mode)
+        self.cat.set_mode(mode, bandwidth)
         self.cat.set_vfo(hrz)
 
         return self._response(True, "")
+
+    def _preferred_filter_width(self, mode: str) -> Optional[int]:
+        """
+        Determine an appropriate passband width (Hz) for the requested mode.
+        Returns None if we should let the rig pick its default.
+        """
+        normalized = (mode or "").upper()
+        if normalized.startswith("CW"):
+            return 500
+        if normalized in ("USB", "LSB", "USB-D", "LSB-D"):
+            return 2400
+        if normalized in ("DIGU", "DIGL", "DATA-U", "DATA-L"):
+            return 3000
+        return None
 
     def get_ptt(self):
         '''Returns the PTT state from CAT control'''

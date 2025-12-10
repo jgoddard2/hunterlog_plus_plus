@@ -1,4 +1,5 @@
 import socket
+from typing import Optional
 from cat.icat import ICat
 import logging as L
 
@@ -31,7 +32,7 @@ class aclog(ICat):
             self.online = False
             logger.error("initializing aclog socket: %s", exception)
 
-    def set_mode(self, mode: str) -> bool:
+    def set_mode(self, mode: str, bandwidth: Optional[int] = None) -> bool:
         """sets the radios mode using AClog API"""
         self.aclog_new_mode = mode
         return True

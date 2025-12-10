@@ -1,4 +1,5 @@
 import socket
+from typing import Optional
 from cat.icat import ICat
 import logging as L
 
@@ -32,7 +33,7 @@ class dxlabs(ICat):
             self.online = False
             logger.error("init_cat", exc_info=e)
 
-    def set_mode(self, mode: str) -> bool:
+    def set_mode(self, mode: str, bandwidth: Optional[int] = None) -> bool:
         """sets the radios mode using DxLabs API"""
 
         # <command:10>CmdSetMode<parameters:7><1:2>CW

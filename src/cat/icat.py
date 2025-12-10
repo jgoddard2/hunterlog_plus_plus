@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Optional
 
 
 class ICat(ABC):
@@ -17,11 +18,12 @@ class ICat(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def set_mode(self, mode: str) -> bool:
+    def set_mode(self, mode: str, bandwidth: Optional[int] = None) -> bool:
         '''
         Sets the radios mode using the supplied string.
 
         mode: str: mode string (CW, USB, CW-U, USB-D)
+        bandwidth: optional preferred filter width (Hz)
 
         returns True on success
         '''

@@ -1,4 +1,5 @@
 import socket
+from typing import Optional
 from cat.icat import ICat
 import logging as L
 
@@ -31,12 +32,30 @@ class rigctld(ICat):
             self.online = False
             logger.warning("init_cat", exc_info=e)
 
-    def set_mode(self, mode: str) -> bool:
+    def _mode_passband(self, mode: str) -> int:
+        """
+        Determine the passband width (Hz) that should accompany a mode change.
+
+        Default rigctld behaviour when width=0 is to keep whatever bandwidth the
+        VFO already had selected, which is why the rig ends up in a generic 3 kHz
+        filter when we jump to a new SSB spot.  Provide reasonable defaults here.
+        """
+        normalized = (mode or "").upper()
+        if normalized in ("USB", "LSB", "USB-D", "LSB-D"):
+            return 2400  # tighter SSB filter for hunting voice spots
+        if normalized.startswith("CW"):
+            return 500
+        if normalized in ("DIGU", "DIGL"):
+            return 3000  # let data modes breathe a little
+        return 0  # fall back to rig default
+
+    def set_mode(self, mode: str, bandwidth: Optional[int] = None) -> bool:
         """sets the radios mode"""
         if self.socket:
             try:
                 self.online = True
-                self.socket.send(bytes(f"M {mode} 0\n", "utf-8"))
+                width = bandwidth if bandwidth is not None else self._mode_passband(mode)
+                self.socket.send(bytes(f"M {mode} {width}\n", "utf-8"))
                 _ = self.socket.recv(1024).decode().strip()
                 return True
             except socket.error as e:

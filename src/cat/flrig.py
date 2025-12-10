@@ -1,5 +1,6 @@
 import socket
 import xmlrpc
+from typing import Optional
 from cat.icat import ICat
 import logging as L
 
@@ -34,11 +35,17 @@ class flrig(ICat):
             self.server = None
             logger.warning("no flrig connection", exc_info=e)
 
-    def set_mode(self, mode: str) -> bool:
+    def set_mode(self, mode: str, bandwidth: Optional[int] = None) -> bool:
         """Sets the radios mode"""
         try:
             self.online = True
-            return self.server.rig.set_mode(mode)
+            result = self.server.rig.set_mode(mode)
+            if bandwidth is not None:
+                try:
+                    self.server.rig.set_bw(int(bandwidth))
+                except Exception as ex:  # noqa: BLE001
+                    logger.debug("set_mode bandwidth adjust", exc_info=ex)
+            return result
         except ConnectionRefusedError as e:
             self.online = False
             logger.warning("set_mode", exc_info=e)

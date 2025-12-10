@@ -6,6 +6,7 @@ GPL V3
 # pyright: ignore[reportOptionalMemberAccess]
 
 import logging
+from typing import Optional
 
 import win32com.client as win32  # pylint: disable=import-error
 
@@ -58,7 +59,7 @@ class OmniRigClient:
             return True
         return False
 
-    def set_mode(self, mode: str) -> bool:
+    def set_mode(self, mode: str, bandwidth: Optional[int] = None) -> bool:
         """
         Sets the raidos mode
         Convert Mode to Omnirig param
