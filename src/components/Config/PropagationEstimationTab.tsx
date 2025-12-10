@@ -51,6 +51,11 @@ export default function PropagationEstimationTab() {
         setConfig({ ...config, prop_azimuth_scale_deg: val });
     };
 
+    const handleHistoryWindowChange = (_event: Event, value: number | number[]) => {
+        const val = Array.isArray(value) ? value[0] : value;
+        setConfig({ ...config, prop_history_minutes: val });
+    };
+
     const handleTestConnection = async () => {
         setTestingConnection(true);
         setConnectionStatus('idle');
@@ -193,6 +198,21 @@ export default function PropagationEstimationTab() {
                             </Typography>
 
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+                                <Box>
+                                    <Typography variant="body2">History window (minutes)</Typography>
+                                    <Slider
+                                        value={config.prop_history_minutes ?? 30}
+                                        onChange={handleHistoryWindowChange}
+                                        min={0}
+                                        max={60}
+                                        step={5}
+                                        valueLabelDisplay="auto"
+                                        disabled={!config.prop_enabled}
+                                    />
+                                    <Typography variant="caption">
+                                        Set to 0 to keep current behavior. Values above 0 fetch up to an hour of chunked predictions.
+                                    </Typography>
+                                </Box>
                                 <Box>
                                     <Typography variant="body2">Distance scale (km)</Typography>
                                     <Slider

@@ -53,6 +53,22 @@ class SotaProgram(Program):
             sota_to_add = Spot()
             sota_to_add.init_from_sota(sota)
 
+            # ensure locator/lat/lon are populated for downstream features
+            summit_meta = self.get_reference(sota_to_add.reference)
+            if summit_meta:
+                locator = (summit_meta.grid6 or summit_meta.grid4 or '')
+                if locator:
+                    locator = locator.strip().upper()
+                    if len(locator) >= 6:
+                        sota_to_add.grid6 = locator[:6]
+                        sota_to_add.grid4 = locator[:4]
+                    elif len(locator) >= 4:
+                        sota_to_add.grid4 = locator[:4]
+                if summit_meta.latitude is not None:
+                    sota_to_add.latitude = summit_meta.latitude
+                if summit_meta.longitude is not None:
+                    sota_to_add.longitude = summit_meta.longitude
+
             sota_to_add.continent = self.continents.find_continent_sota(
                 sota_to_add.reference.split('/')[0]
             )

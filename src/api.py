@@ -3,7 +3,7 @@ import time
 import webview
 import logging as L
 import datetime
-from typing import Optional
+from typing import Optional, List, Tuple
 import threading
 from datetime import timedelta
 
@@ -49,7 +49,7 @@ class JsApi:
         # Propagation tracking
         self.last_prop_update = None
         self.current_band_id = 0
-        self.prop_model_cache: dict[str, tuple[datetime.datetime, list]] = {}
+        self.prop_model_cache: dict[str, tuple[datetime.datetime, int, list]] = {}
         self.propagation_snapshot: dict[str, dict[str, dict[str, object]]] = {}
         self.propagation_history: dict[str, list[dict[str, object]]] = {}
 
@@ -162,24 +162,38 @@ class JsApi:
             logging.info(f"[PROP FETCH] Starting kernel smoothing propagation fetch for band={band_name}, rx_grid={my_grid}")
             
             refresh_minutes = self.db.config.get_value('prop_refresh_minutes') or 10
+            history_minutes = self.db.config.get_value('prop_history_minutes') or 0
+            try:
+                history_minutes = int(history_minutes)
+            except (TypeError, ValueError):
+                history_minutes = 0
+            history_minutes = max(0, min(60, history_minutes))
+            if history_minutes > 0 and history_minutes < refresh_minutes:
+                history_minutes = refresh_minutes
+            chunk_mode = history_minutes > 0
+            fetch_minutes = history_minutes if chunk_mode else refresh_minutes
+            if fetch_minutes <= 0:
+                fetch_minutes = refresh_minutes
+
             cache_key = band_name.lower()
             now = datetime.datetime.utcnow()
             cached_entry = self.prop_model_cache.get(cache_key)
             prop_reports = None
+            reports_with_time: List[Tuple[object, datetime.datetime]] = []
             
             if cached_entry:
-                cached_time, cached_reports = cached_entry
+                cached_time, cached_window, cached_reports = cached_entry
                 age_minutes = (now - cached_time).total_seconds() / 60.0
-                if age_minutes < refresh_minutes:
+                if age_minutes < refresh_minutes and cached_window >= fetch_minutes:
                     prop_reports = cached_reports
-                    logging.info(f"[PROP FETCH] Using cached propagation dataset for {band_name} (age {age_minutes:.1f} min < {refresh_minutes})")
+                    logging.info(f"[PROP FETCH] Using cached propagation dataset for {band_name} (age {age_minutes:.1f} min < {refresh_minutes}, window {cached_window}min)")
             
             if prop_reports is None:
                 # Fetch global reports (not filtered by user grid)
                 reports = self.prop_fetcher.fetch_reception_reports(
                     rx_grid=my_grid,  # Kept for API compatibility, not used for filtering
                     band=band_name,
-                    minutes=refresh_minutes
+                    minutes=fetch_minutes
                 )
                 
                 logging.info(f"[PROP FETCH] Received {len(reports)} global propagation reports")
@@ -205,9 +219,15 @@ class JsApi:
                         azimuth = r.get('azimuth_deg', 0)
                         if azimuth == 0 and r.get('tx_grid') and r.get('rx_grid'):
                             azimuth = calculate_bearing(r.get('tx_grid'), r.get('rx_grid'))
+
+                        timestamp_obj = r.get('timestamp', datetime.datetime.utcnow())
+                        if isinstance(timestamp_obj, datetime.datetime):
+                            timestamp_str = timestamp_obj.isoformat()
+                        else:
+                            timestamp_str = str(timestamp_obj)
                         
                         prop_report = PropagationReport(
-                            timestamp_utc=r.get('timestamp', ''),
+                            timestamp_utc=timestamp_str,
                             band=r.get('band', band_name),
                             snr_db=r.get('snr', 0.0),
                             tx_call=r.get('tx_call', ''),
@@ -222,14 +242,22 @@ class JsApi:
                             azimuth_deg=azimuth
                         )
                         prop_reports.append(prop_report)
+                        reports_with_time.append((prop_report, self._normalize_report_timestamp(timestamp_str)))
                     except Exception as ex:
                         logging.debug(f"[PROP FETCH] Error converting report: {ex}")
                         continue
                 
                 logging.info(f"[PROP FETCH] Converted {len(prop_reports)} reports for kernel smoothing (prediction dataset ready)")
-                self.prop_model_cache[cache_key] = (now, prop_reports)
+                self.prop_model_cache[cache_key] = (now, fetch_minutes, prop_reports)
             else:
                 logging.info(f"[PROP FETCH] Reusing {len(prop_reports)} cached propagation reports for kernel smoothing")
+
+            if not reports_with_time:
+                reports_with_time = [
+                    (report, self._normalize_report_timestamp(report.timestamp_utc))
+                    for report in prop_reports
+                ]
+            reports_with_time.sort(key=lambda item: item[1])
             
             # Get current spots from database (only active, non-QRT)
             try:
@@ -240,14 +268,17 @@ class JsApi:
                     
                 spots = self.db.spots.get_spots()
                 logging.info(f"[PROP FETCH] Processing {len(spots)} spots for predictions")
+                spot_lookup = {spot.spotId: spot for spot in spots}
                 
                 # Build spot paths for kernel smoothing
                 spot_paths = []
                 my_lat, my_lon = grid_to_latlon(my_grid)
                 
+                missing_grid_spots: list[int] = []
                 for spot in spots:
                     # Skip spots without grid square data
                     if not spot.grid4 and not spot.grid6:
+                        missing_grid_spots.append(spot.spotId)
                         continue
                     
                     spot_grid = spot.grid6 if spot.grid6 else spot.grid4
@@ -271,51 +302,74 @@ class JsApi:
                         continue
                 
                 logging.info(f"[PROP FETCH] Calculated path geometry for {len(spot_paths)} spots")
+                if missing_grid_spots:
+                    logging.warning(f"[PROP FETCH] Skipped {len(missing_grid_spots)} spots with no grid square data (examples: {missing_grid_spots[:3]})")
+                if not spot_paths:
+                    logging.info("[PROP FETCH] No spots with valid geometry; skipping propagation update")
+                    return
                 
                 # Use kernel smoothing to predict SNR for each spot
-                reports_by_band = {band_name: prop_reports}
                 distance_scale = self.db.config.get_value('prop_distance_scale_km') or 3000
                 azimuth_scale = self.db.config.get_value('prop_azimuth_scale_deg') or 60
                 logging.info(f"[PROP MODEL] Building prediction model for {len(spot_paths)} active spots on {band_name} (distance scale={distance_scale}km, azimuth scale={azimuth_scale}deg)")
-                predictions = batch_predict_snr(
-                    spot_paths,
-                    reports_by_band,
-                    distance_scale_km=float(distance_scale),
-                    azimuth_scale_deg=float(azimuth_scale)
-                )
-                
-                logging.info(f"[PROP FETCH] Generated {sum(1 for v in predictions.values() if v is not None)} SNR predictions")
+
+                prediction_series: List[Tuple[datetime.datetime, dict[int, Optional[float]]]] = []
+                if chunk_mode:
+                    prediction_series = self._build_chunk_prediction_series(
+                        spot_paths,
+                        reports_with_time,
+                        band_name,
+                        float(distance_scale),
+                        float(azimuth_scale),
+                        refresh_minutes,
+                        history_minutes,
+                        batch_predict_snr
+                    )
+                else:
+                    predictions = batch_predict_snr(
+                        spot_paths,
+                        {band_name: prop_reports},
+                        distance_scale_km=float(distance_scale),
+                        azimuth_scale_deg=float(azimuth_scale)
+                    )
+                    prediction_series = [(datetime.datetime.utcnow(), predictions)]
+
+                if not prediction_series:
+                    logging.info("[PROP FETCH] No prediction series generated; falling back to single snapshot")
+                    predictions = batch_predict_snr(
+                        spot_paths,
+                        {band_name: prop_reports},
+                        distance_scale_km=float(distance_scale),
+                        azimuth_scale_deg=float(azimuth_scale)
+                    )
+                    prediction_series = [(datetime.datetime.utcnow(), predictions)]
+                    chunk_mode = False
                 
                 # Get SNR thresholds from config
                 ssb_threshold = self.db.config.get_value('prop_ssb_threshold')
                 digital_threshold = self.db.config.get_value('prop_digital_threshold')
+
+                if chunk_mode:
+                    for chunk_time, chunk_predictions in prediction_series:
+                        self._record_history_for_chunk(chunk_predictions, spot_lookup, chunk_time)
                 
                 # Update spots with predictions
                 update_count = 0
                 band_snapshot: dict[str, dict[str, object]] = {}
-                for spot_id, predicted_snr in predictions.items():
-                    spot = self.db.spots.get_spot(spot_id)
-                    if spot:
-                        if predicted_snr is not None:
-                            spot.propagation_snr = predicted_snr
-                            spot.propagation_status = classify_snr(predicted_snr, ssb_threshold, digital_threshold)
-                            spot.propagation_updated = datetime.datetime.utcnow()
-                            update_count += 1
-                            
-                            spot_key = self._propagation_snapshot_key(spot.activator, spot.reference)
-                            band_snapshot[spot_key] = {
-                                'snr': predicted_snr,
-                                'status': spot.propagation_status,
-                                'updated': spot.propagation_updated
-                            }
-                            self._append_propagation_history(spot_key, predicted_snr, spot.propagation_updated)
-                            
-                            # Log first few predictions
-                            if update_count <= 3:
-                                logging.info(f"[PROP UPDATE] Predicted SNR for {spot.activator} at {spot.reference}: {predicted_snr:.1f}dB ({spot.propagation_status})")
-                        else:
-                            # No prediction available
-                            spot.propagation_status = 'no_data'
+                latest_time, latest_predictions = prediction_series[-1]
+                predicted_count = sum(1 for v in latest_predictions.values() if v is not None)
+                logging.info(f"[PROP FETCH] Generated {predicted_count} SNR predictions for latest chunk")
+
+                update_count = self._apply_predictions_to_spots(
+                    latest_predictions,
+                    spot_lookup,
+                    classify_snr,
+                    ssb_threshold,
+                    digital_threshold,
+                    band_snapshot,
+                    prediction_time=latest_time,
+                    record_history=not chunk_mode
+                )
                 
                 self.db.commit_session()
                 
@@ -356,7 +410,13 @@ class JsApi:
                 updated = self._apply_landscape_to_missing_spots(band_name)
                 if updated:
                     self._refresh_spots_frontend()
-                return self._response(True, "", action="restored", updated=updated)
+                    return self._response(True, "", action="restored", updated=updated)
+
+                rebuilt = self._recompute_predictions_from_cache(band_name)
+                if rebuilt:
+                    self._refresh_spots_frontend()
+                    return self._response(True, "", action="recomputed", updated=rebuilt)
+                return self._response(True, "No cached landscape entries for this spot", action="none", updated=0)
 
             logging.info(f"[PROP FETCH] No cached landscape for {band_name}; triggering fresh propagation build")
             self.trigger_propagation_fetch(band_id)
@@ -364,6 +424,285 @@ class JsApi:
         except Exception as ex:
             logging.error("Error ensuring propagation landscape", exc_info=ex)
             return self._response(False, "Unable to ensure propagation landscape")
+
+    def _normalize_report_timestamp(self, value) -> datetime.datetime:
+        """Convert various timestamp formats into a naive UTC datetime."""
+        if isinstance(value, datetime.datetime):
+            if value.tzinfo is not None:
+                return value.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+            return value
+
+        if isinstance(value, str):
+            try:
+                iso_value = value.replace('Z', '+00:00') if value.endswith('Z') else value
+                parsed = datetime.datetime.fromisoformat(iso_value)
+                if parsed.tzinfo is not None:
+                    parsed = parsed.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+                return parsed
+            except ValueError:
+                pass
+
+        if isinstance(value, (int, float)):
+            try:
+                return datetime.datetime.utcfromtimestamp(float(value))
+            except Exception:
+                pass
+
+        return datetime.datetime.utcnow()
+
+    def _record_history_for_chunk(self, predictions: dict[int, Optional[float]], spot_lookup: dict[int, Spot], timestamp: datetime.datetime):
+        """Record propagation history samples for a specific time chunk."""
+        if timestamp is None:
+            return
+
+        for spot_id, predicted_snr in predictions.items():
+            if predicted_snr is None:
+                continue
+            spot = spot_lookup.get(spot_id)
+            if not spot:
+                continue
+            spot_key = self._propagation_snapshot_key(spot.activator, spot.reference)
+            self._append_propagation_history(spot_key, predicted_snr, timestamp)
+
+    def _build_chunk_prediction_series(
+        self,
+        spot_paths,
+        reports_with_time: List[Tuple[object, datetime.datetime]],
+        band_name: str,
+        distance_scale: float,
+        azimuth_scale: float,
+        refresh_minutes: int,
+        history_minutes: int,
+        predictor,
+    ) -> List[Tuple[datetime.datetime, dict[int, Optional[float]]]]:
+        """Build predictions for multiple time chunks to backfill history."""
+        series: List[Tuple[datetime.datetime, dict[int, Optional[float]]]] = []
+        if not reports_with_time or not spot_paths:
+            return series
+
+        reports_with_time.sort(key=lambda item: item[1])
+        latest_ts = reports_with_time[-1][1]
+        chunk_minutes = max(1, int(refresh_minutes))
+        history_minutes = max(chunk_minutes, min(60, int(history_minutes)))
+        num_chunks = max(1, (history_minutes + chunk_minutes - 1) // chunk_minutes)
+        earliest_limit = latest_ts - datetime.timedelta(minutes=history_minutes)
+
+        windows_desc: List[Tuple[datetime.datetime, datetime.datetime]] = []
+        window_end = latest_ts
+        while len(windows_desc) < num_chunks and window_end > earliest_limit:
+            window_start = window_end - datetime.timedelta(minutes=chunk_minutes)
+            windows_desc.append((window_start, window_end))
+            window_end = window_start
+
+        generated = 0
+        for window_start, window_end in windows_desc:
+            chunk_reports = [
+                report for report, ts in reports_with_time
+                if window_start < ts <= window_end
+            ]
+            if not chunk_reports:
+                logging.debug(f"[PROP FETCH] No PSKReporter data for chunk ending {window_end.isoformat()} - skipping")
+                continue
+
+            predictions = predictor(
+                spot_paths,
+                {band_name: chunk_reports},
+                distance_scale_km=distance_scale,
+                azimuth_scale_deg=azimuth_scale
+            )
+            series.append((window_end, dict(predictions)))
+            generated += 1
+
+        if not series:
+            logging.warning("[PROP FETCH] Unable to build any chunked predictions from fetched PSKReporter data")
+        else:
+            series.sort(key=lambda item: item[0])
+            logging.info(f"[PROP FETCH] Built {generated} chunked prediction windows spanning {len(series)} samples")
+
+        return series
+
+    def _apply_predictions_to_spots(
+        self,
+        predictions: dict[int, Optional[float]],
+        spot_lookup: dict[int, Spot],
+        classify_func,
+        ssb_threshold: float,
+        digital_threshold: float,
+        band_snapshot: dict[str, dict[str, object]],
+        prediction_time: datetime.datetime,
+        record_history: bool = True
+    ) -> int:
+        """Apply prediction values to the database spots and optionally record history."""
+        if prediction_time is None:
+            prediction_time = datetime.datetime.utcnow()
+
+        update_count = 0
+        for spot_id, predicted_snr in predictions.items():
+            spot = spot_lookup.get(spot_id)
+            if not spot:
+                continue
+
+            if predicted_snr is not None:
+                spot.propagation_snr = predicted_snr
+                spot.propagation_status = classify_func(predicted_snr, ssb_threshold, digital_threshold)
+                spot.propagation_updated = prediction_time
+                update_count += 1
+
+                spot_key = self._propagation_snapshot_key(spot.activator, spot.reference)
+                band_snapshot[spot_key] = {
+                    'snr': predicted_snr,
+                    'status': spot.propagation_status,
+                    'updated': prediction_time
+                }
+
+                if record_history:
+                    self._append_propagation_history(spot_key, predicted_snr, prediction_time)
+
+                if update_count <= 3:
+                    logging.info(f"[PROP UPDATE] Predicted SNR for {spot.activator} at {spot.reference}: {predicted_snr:.1f}dB ({spot.propagation_status})")
+            else:
+                spot.propagation_status = 'no_data'
+                logging.debug(f"[PROP FETCH] No propagation estimate for spot {spot.spotId} ({spot.activator}/{spot.reference}); landscape did not produce a prediction")
+
+        return update_count
+
+    def _recompute_predictions_from_cache(self, band_name: str) -> int:
+        """Rebuild predictions for the current spots using cached propagation reports."""
+        cache_key = band_name.lower()
+        cache_entry = self.prop_model_cache.get(cache_key)
+        if not cache_entry:
+            logging.info(f"[PROP FETCH] Cannot recompute cached landscape for {band_name}: no cached dataset")
+            return 0
+
+        cached_time, cached_window, prop_reports = cache_entry
+        if not prop_reports:
+            logging.info(f"[PROP FETCH] Cannot recompute cached landscape for {band_name}: cached dataset empty")
+            return 0
+
+        my_grid = self.db.config.get_value('my_grid6')
+        if not my_grid or len(my_grid) < 4:
+            logging.warning("[PROP FETCH] Cannot recompute cached landscape: invalid grid square")
+            return 0
+
+        from propagation_kernel import SpotPath, batch_predict_snr, classify_snr
+        from propagation_utils import grid_to_latlon, calculate_distance, calculate_bearing
+
+        refresh_minutes = self.db.config.get_value('prop_refresh_minutes') or 10
+        history_minutes = self.db.config.get_value('prop_history_minutes') or 0
+        try:
+            refresh_minutes = int(refresh_minutes)
+        except (TypeError, ValueError):
+            refresh_minutes = 10
+        try:
+            history_minutes = int(history_minutes)
+        except (TypeError, ValueError):
+            history_minutes = 0
+        history_minutes = max(0, min(60, history_minutes))
+        chunk_mode = history_minutes > 0
+        fetch_minutes = cached_window or refresh_minutes
+
+        logging.info(f"[PROP FETCH] Recomputing propagation landscape for {band_name} using cached {len(prop_reports)} reports (window {fetch_minutes} min)")
+
+        reports_with_time = [
+            (report, self._normalize_report_timestamp(report.timestamp_utc))
+            for report in prop_reports
+        ]
+        reports_with_time.sort(key=lambda item: item[1])
+
+        acquired = self.lock.acquire(timeout=4.0)
+        if not acquired:
+            logging.warning("[PROP FETCH] Could not acquire lock to recompute cached landscape")
+            return 0
+
+        try:
+            spots = self.db.spots.get_spots()
+            if not spots:
+                return 0
+
+            spot_lookup = {spot.spotId: spot for spot in spots}
+            spot_paths = []
+            my_lat, my_lon = grid_to_latlon(my_grid)
+
+            for spot in spots:
+                if not spot.grid4 and not spot.grid6:
+                    continue
+                spot_grid = spot.grid6 if spot.grid6 else spot.grid4
+                try:
+                    distance_km = calculate_distance(my_grid, spot_grid)
+                    azimuth_deg = calculate_bearing(my_grid, spot_grid)
+                    spot_paths.append(SpotPath(
+                        spot_id=spot.spotId,
+                        activator_call=spot.activator,
+                        activator_grid=spot_grid,
+                        distance_km=distance_km,
+                        azimuth_deg=azimuth_deg,
+                        band=band_name
+                    ))
+                except Exception as ex:
+                    logging.debug(f"[PROP FETCH] Error calculating path during recompute for spot {spot.spotId}: {ex}")
+                    continue
+
+            if not spot_paths:
+                logging.info("[PROP FETCH] No valid spot paths during cached recompute; aborting")
+                return 0
+
+            distance_scale = self.db.config.get_value('prop_distance_scale_km') or 3000
+            azimuth_scale = self.db.config.get_value('prop_azimuth_scale_deg') or 60
+
+            prediction_series: List[Tuple[datetime.datetime, dict[int, Optional[float]]]] = []
+            if chunk_mode:
+                prediction_series = self._build_chunk_prediction_series(
+                    spot_paths,
+                    reports_with_time,
+                    band_name,
+                    float(distance_scale),
+                    float(azimuth_scale),
+                    refresh_minutes,
+                    history_minutes,
+                    batch_predict_snr
+                )
+            else:
+                predictions = batch_predict_snr(
+                    spot_paths,
+                    {band_name: prop_reports},
+                    distance_scale_km=float(distance_scale),
+                    azimuth_scale_deg=float(azimuth_scale)
+                )
+                prediction_series = [(datetime.datetime.utcnow(), predictions)]
+
+            if not prediction_series:
+                logging.info("[PROP FETCH] Cached recompute did not produce predictions")
+                return 0
+
+            ssb_threshold = self.db.config.get_value('prop_ssb_threshold')
+            digital_threshold = self.db.config.get_value('prop_digital_threshold')
+            if chunk_mode:
+                for chunk_time, chunk_predictions in prediction_series:
+                    self._record_history_for_chunk(chunk_predictions, spot_lookup, chunk_time)
+
+            latest_time, latest_predictions = prediction_series[-1]
+            band_snapshot: dict[str, dict[str, object]] = {}
+            update_count = self._apply_predictions_to_spots(
+                latest_predictions,
+                spot_lookup,
+                classify_snr,
+                ssb_threshold,
+                digital_threshold,
+                band_snapshot,
+                prediction_time=latest_time,
+                record_history=not chunk_mode
+            )
+
+            if update_count == 0:
+                return 0
+
+            self.db.commit_session()
+            self.propagation_snapshot[cache_key] = band_snapshot
+            logging.info(f"[PROP FETCH] Recomputed cached landscape for {band_name}; updated {update_count} spots")
+            return update_count
+        finally:
+            if acquired:
+                self.lock.release()
 
     def get_spot(self, spot_id: int):
         logging.debug('py get_spot')

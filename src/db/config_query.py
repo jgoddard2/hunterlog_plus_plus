@@ -241,6 +241,15 @@ class ConfigQuery:
             'group': 'propagation',
             'enabled': 'True',
             'editable': 'True'
+        },
+        {
+            'key': 'prop_history_minutes',
+            'val': '30',
+            'type': 'int',
+            'description': 'Minutes of propagation history to backfill (0=off, max 60)',
+            'group': 'propagation',
+            'enabled': 'True',
+            'editable': 'True'
         }
 
     ]

@@ -117,6 +117,7 @@ export default function ConfigModal() {
         config.prop_refresh_minutes = Number(getVar(cfg2, "prop_refresh_minutes")) || 10;
         config.prop_ssb_threshold = Number(getVar(cfg2, "prop_ssb_threshold")) || 10;
         config.prop_digital_threshold = Number(getVar(cfg2, "prop_digital_threshold")) || -15;
+        config.prop_history_minutes = Number(getVar(cfg2, "prop_history_minutes")) || 30;
 
         console.log('[ConfigModal] Loaded prop_enabled:', config.prop_enabled, 'from DB value:', propEnabledRaw);
         setConfig(config);
@@ -143,6 +144,7 @@ export default function ConfigModal() {
         setVar(config2, "prop_refresh_minutes", config.prop_refresh_minutes.toString());
         setVar(config2, "prop_ssb_threshold", config.prop_ssb_threshold.toString());
         setVar(config2, "prop_digital_threshold", config.prop_digital_threshold.toString());
+        setVar(config2, "prop_history_minutes", config.prop_history_minutes.toString());
 
         setConfig2(config2);
     }

@@ -58,9 +58,11 @@ class PSKReporterClient:
         """
         self._rate_limit()
         
+        lookback_minutes = max(1, int(minutes))
+        flow_start = datetime.utcnow() - timedelta(minutes=lookback_minutes)
         params = {
-            # PSKReporter expects a negative offset relative to "now"
-            'flowStartSeconds': -int(minutes * 60),
+            # PSKReporter expects an absolute UTC timestamp for the earliest flowStartSeconds
+            'flowStartSeconds': int(flow_start.timestamp()),
             'noactive': '1',  # Exclude senders who are currently active
             'nolocator': '0',  # Include records with locators
             'rronly': '1',    # Reception reports only
@@ -107,9 +109,11 @@ class PSKReporterClient:
         """
         self._rate_limit()
         
+        lookback_minutes = max(1, int(minutes))
+        flow_start = datetime.utcnow() - timedelta(minutes=lookback_minutes)
         params = {
-            # PSKReporter expects negative seconds relative to now
-            'flowStartSeconds': -int(minutes * 60),
+            # PSKReporter expects absolute UNIX timestamp
+            'flowStartSeconds': int(flow_start.timestamp()),
             'rptlimit': 2000,  # Limit to prevent overload
             'rronly': 1,
             'noactive': 1,

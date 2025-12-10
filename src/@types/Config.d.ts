@@ -22,6 +22,7 @@ export interface UserConfig {
     prop_digital_threshold: number,
     prop_distance_scale_km: number,
     prop_azimuth_scale_deg: number,
+    prop_history_minutes: number,
 }
 
 export interface ConfigVer2 {
