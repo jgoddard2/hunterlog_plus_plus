@@ -34,6 +34,7 @@ class JsApi:
     def __init__(self):
         self.lock = threading.Lock()
         self.db = DataBase()
+        self._ensure_propagation_default_enabled()
         self.pota = PotaApi()
         self.sota = SotaApi()
         self.wwff = WwffApi()
@@ -73,6 +74,26 @@ class JsApi:
             logging.error("Error creating CAT object: ", exc_info=True)
             self.cat = None
         self.pw = None
+
+    def _ensure_propagation_default_enabled(self) -> None:
+        """
+        Ensure the propagation feature is seeded to enabled at least once.
+        """
+        try:
+            seeded = self.db.config.get_value('prop_enabled_seeded')
+        except Exception:
+            logging.debug("[PROP CFG] Unable to read propagation default flag; skipping seeding")
+            return
+
+        if seeded:
+            return
+
+        try:
+            self.db.config.set_value('prop_enabled', True)
+            self.db.config.set_value('prop_enabled_seeded', True, commit=True)
+            logging.info("[PROP CFG] Propagation feature enabled by default for this install")
+        except Exception as exc:
+            logging.error("[PROP CFG] Failed to seed propagation defaults", exc_info=exc)
 
     def check_and_update_propagation(self):
         """
@@ -239,7 +260,8 @@ class JsApi:
                             rx_lat=r.get('rx_lat', 0.0),
                             rx_lon=r.get('rx_lon', 0.0),
                             distance_km=r.get('distance_km', 0.0),
-                            azimuth_deg=azimuth
+                            azimuth_deg=azimuth,
+                            tx_power_dbm=r.get('tx_power_dbm')
                         )
                         prop_reports.append(prop_report)
                         reports_with_time.append((prop_report, self._normalize_report_timestamp(timestamp_str)))
@@ -501,7 +523,7 @@ class JsApi:
                 if window_start < ts <= window_end
             ]
             if not chunk_reports:
-                logging.debug(f"[PROP FETCH] No PSKReporter data for chunk ending {window_end.isoformat()} - skipping")
+                logging.debug(f"[PROP FETCH] No WSPR data for chunk ending {window_end.isoformat()} - skipping")
                 continue
 
             predictions = predictor(
@@ -514,7 +536,7 @@ class JsApi:
             generated += 1
 
         if not series:
-            logging.warning("[PROP FETCH] Unable to build any chunked predictions from fetched PSKReporter data")
+            logging.warning("[PROP FETCH] Unable to build any chunked predictions from fetched WSPR data")
         else:
             series.sort(key=lambda item: item[0])
             logging.info(f"[PROP FETCH] Built {generated} chunked prediction windows spanning {len(series)} samples")
@@ -1509,10 +1531,8 @@ class JsApi:
         '''
         try:
             from propagation_fetcher import PropagationDataFetcher
-            
-            data_source = self.db.config.get_value('prop_data_source')
-            fetcher = PropagationDataFetcher(data_source)
-            
+
+            fetcher = PropagationDataFetcher()
             success = fetcher.test_connection()
             
             return self._response(True, "", connected=success)

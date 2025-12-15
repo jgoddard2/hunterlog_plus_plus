@@ -130,7 +130,7 @@ class SpotQuery:
     """
     def update_propagation_data(self, reports: list[dict]):
         '''
-        Update spots with propagation data from PSKReporter reports.
+        Update spots with propagation data from WSPR reports.
         '''
         if not reports:
             return

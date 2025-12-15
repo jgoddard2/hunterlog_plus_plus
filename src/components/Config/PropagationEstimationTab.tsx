@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Box, TextField, Typography, Switch, FormControlLabel, MenuItem, Button, Alert, Slider, Tooltip, IconButton, Grid } from '@mui/material';
+import { Box, TextField, Typography, Switch, FormControlLabel, Button, Alert, Slider, Tooltip, IconButton, Grid } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useConfigContext } from './ConfigContextProvider';
 
@@ -7,6 +7,7 @@ export default function PropagationEstimationTab() {
     const { config, setConfig } = useConfigContext();
     const [testingConnection, setTestingConnection] = React.useState(false);
     const [connectionStatus, setConnectionStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
+    const isPropEnabled = config.prop_enabled ?? true;
 
     const handleEnabledChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         console.log('[PropagationTab] Toggle changed to:', event.target.checked);
@@ -14,10 +15,6 @@ export default function PropagationEstimationTab() {
         const newConfig = { ...config, prop_enabled: event.target.checked };
         console.log('[PropagationTab] Setting new config:', newConfig.prop_enabled);
         setConfig(newConfig);
-    };
-
-    const handleDataSourceChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        setConfig({ ...config, prop_data_source: event.target.value });
     };
 
     const handleRefreshMinutesChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -63,7 +60,9 @@ export default function PropagationEstimationTab() {
         try {
             if (window.pywebview !== undefined && window.pywebview.api !== null) {
                 const result = await window.pywebview.api.test_propagation_connection();
-                setConnectionStatus(result ? 'success' : 'error');
+                const parsed = typeof result === 'string' ? JSON.parse(result) : result;
+                const connected = parsed?.connected ?? false;
+                setConnectionStatus(connected ? 'success' : 'error');
             }
         } catch (error) {
             console.error('Error testing connection:', error);
@@ -75,7 +74,7 @@ export default function PropagationEstimationTab() {
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Typography variant="h6">Propagation Estimation</Typography>
+            <Typography variant="h6">Propagation Estimation 2</Typography>
 
             <Typography variant="body2" color="text.secondary">
                 Real-time propagation estimation based on digital-mode reception reports. Tune the refresh interval and smoothing to match your operating style.
@@ -88,26 +87,12 @@ export default function PropagationEstimationTab() {
                             <FormControlLabel
                                 control={
                                     <Switch
-                                        checked={!!config.prop_enabled}
+                                        checked={isPropEnabled}
                                         onChange={handleEnabledChange}
                                     />
                                 }
                                 label="Enable Propagation Feature"
                             />
-
-                            <TextField
-                                select
-                                label="Data Source"
-                                value={config.prop_data_source || 'pskreporter'}
-                                onChange={handleDataSourceChange}
-                                helperText="Select propagation data source"
-                                disabled={!config.prop_enabled}
-                                size="small"
-                            >
-                                <MenuItem value="pskreporter">PSKReporter (Recommended)</MenuItem>
-                                <MenuItem value="wspr">WSPRnet</MenuItem>
-                                <MenuItem value="rbn">Reverse Beacon Network</MenuItem>
-                            </TextField>
 
                             <TextField
                                 label="Refresh Interval (minutes)"
@@ -116,14 +101,14 @@ export default function PropagationEstimationTab() {
                                 onChange={handleRefreshMinutesChange}
                                 helperText="How often to fetch data (1-60 min)"
                                 inputProps={{ min: 1, max: 60 }}
-                                disabled={!config.prop_enabled}
+                                disabled={!isPropEnabled}
                                 size="small"
                             />
 
                             <Button
                                 variant="outlined"
                                 onClick={handleTestConnection}
-                                disabled={!config.prop_enabled || testingConnection}
+                                disabled={!isPropEnabled || testingConnection}
                                 size="small"
                                 sx={{ alignSelf: 'flex-start' }}
                             >
@@ -131,7 +116,7 @@ export default function PropagationEstimationTab() {
                             </Button>
 
                             {connectionStatus === 'success' && (
-                                <Alert severity="success">Connected to {config.prop_data_source}!</Alert>
+                                <Alert severity="success">Connected to WSPR Rocks!</Alert>
                             )}
 
                             {connectionStatus === 'error' && (
@@ -149,7 +134,7 @@ export default function PropagationEstimationTab() {
                                     value={config.prop_ssb_threshold || 10}
                                     onChange={handleSsbThresholdChange}
                                     helperText="Min SNR for voice"
-                                    disabled={!config.prop_enabled}
+                                    disabled={!isPropEnabled}
                                     size="small"
                                     sx={{ flex: 1 }}
                                 />
@@ -160,7 +145,7 @@ export default function PropagationEstimationTab() {
                                     value={config.prop_digital_threshold || -15}
                                     onChange={handleDigitalThresholdChange}
                                     helperText="Min SNR for digital"
-                                    disabled={!config.prop_enabled}
+                                    disabled={!isPropEnabled}
                                     size="small"
                                     sx={{ flex: 1 }}
                                 />
@@ -207,7 +192,7 @@ export default function PropagationEstimationTab() {
                                         max={60}
                                         step={5}
                                         valueLabelDisplay="auto"
-                                        disabled={!config.prop_enabled}
+                                        disabled={!isPropEnabled}
                                     />
                                     <Typography variant="caption">
                                         Set to 0 to keep current behavior. Values above 0 fetch up to an hour of chunked predictions.
@@ -222,7 +207,7 @@ export default function PropagationEstimationTab() {
                                         max={6000}
                                         step={250}
                                         valueLabelDisplay="auto"
-                                        disabled={!config.prop_enabled}
+                                        disabled={!isPropEnabled}
                                     />
                                     <Typography variant="caption">
                                         Larger numbers let distant reports influence predictions.
@@ -238,7 +223,7 @@ export default function PropagationEstimationTab() {
                                         max={180}
                                         step={5}
                                         valueLabelDisplay="auto"
-                                        disabled={!config.prop_enabled}
+                                        disabled={!isPropEnabled}
                                     />
                                     <Typography variant="caption">
                                         Higher values accept bigger differences in bearing.

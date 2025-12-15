@@ -62,10 +62,26 @@ def fix_prop_config():
             print("[INFO] prop_enabled doesn't exist, creating it...")
             cursor.execute(
                 "INSERT INTO config (key, val, type, description, 'group', enabled, editable) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                ('prop_enabled', 'False', 'bool', 'Enable propagation estimation feature', 'propagation', 'True', 'True')
+                ('prop_enabled', 'True', 'bool', 'Enable propagation estimation feature', 'propagation', 'True', 'True')
             )
             conn.commit()
             print("[OK] Created prop_enabled config")
+
+        # Ensure the seeding flag exists and is set
+        cursor.execute("SELECT key, val FROM config WHERE key = 'prop_enabled_seeded'")
+        seeded_row = cursor.fetchone()
+        if seeded_row:
+            if seeded_row[1] != 'True':
+                cursor.execute("UPDATE config SET val = 'True' WHERE key = 'prop_enabled_seeded'")
+                conn.commit()
+                print("[OK] Updated prop_enabled_seeded to 'True'")
+        else:
+            cursor.execute(
+                "INSERT INTO config (key, val, type, description, 'group', enabled, editable) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                ('prop_enabled_seeded', 'True', 'bool', 'Internal propagation default flag', 'propagation', 'False', 'False')
+            )
+            conn.commit()
+            print("[OK] Created prop_enabled_seeded flag")
         
         # Show all prop configs
         print("\nAll propagation config values:")

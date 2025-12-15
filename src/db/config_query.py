@@ -181,7 +181,7 @@ class ConfigQuery:
         },
         {
             'key': 'prop_enabled',
-            'val': 'False',
+            'val': 'True',
             'type': 'bool',
             'description': 'Enable propagation estimation feature',
             'group': 'propagation',
@@ -189,13 +189,13 @@ class ConfigQuery:
             'editable': 'True'
         },
         {
-            'key': 'prop_data_source',
-            'val': 'pskreporter',
-            'type': 'string',
-            'description': 'Propagation data source (pskreporter, wspr, rbn)',
+            'key': 'prop_enabled_seeded',
+            'val': 'False',
+            'type': 'bool',
+            'description': 'Internal flag to seed propagation defaults once',
             'group': 'propagation',
-            'enabled': 'True',
-            'editable': 'True'
+            'enabled': 'False',
+            'editable': 'False'
         },
         {
             'key': 'prop_refresh_minutes',
@@ -406,9 +406,13 @@ class ConfigQuery:
 
             logging.info("adding new default cfg rows...")
 
-            # already has new cfg rows, but defaults there's new stuff at end
-            num_missing = len(self.DEFAULTS) - x
-            for i in range(x, x+num_missing):
-                add = cs.load(self.DEFAULTS[i], session=self.session)
+            existing = {row.key for row in self.session.query(ConfigVer2).all()}
+            added = False
+            for default in self.DEFAULTS:
+                if default['key'] in existing:
+                    continue
+                add = cs.load(default, session=self.session)
                 self.session.add(add)
-            self.session.commit()
+                added = True
+            if added:
+                self.session.commit()

@@ -1,17 +1,17 @@
 """
 Kernel smoothing algorithm for propagation SNR prediction.
 
-This module implements a sophisticated propagation prediction system that uses
-kernel smoothing to predict SNR values based on path geometry similarity rather
-than direct callsign matching.
+This module implements a propagation prediction system that uses
+kernel smoothing to predict SNR values based on path geometry similarity
+rather than direct callsign matching.
 
 The algorithm:
 1. For each spot, calculates the path geometry (distance, azimuth) from user to activator
-2. Compares this path to all available PSKReporter reports
+2. Compares this path to all available WSPR reports
 3. Uses a weighted average where weights depend on path similarity
 4. Higher weight for reports with similar distance AND azimuth
 
-Based on the approach described in the PSKReporter kernel smoothing example.
+Based on the approach described in earlier kernel smoothing experiments.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ MIN_WEIGHT = 0.01
 
 @dataclass
 class PropagationReport:
-    """A single PSKReporter reception report with path geometry."""
+    """A single WSPR reception report with path geometry."""
     timestamp_utc: str
     band: str
     snr_db: float
@@ -61,6 +61,7 @@ class PropagationReport:
     
     distance_km: float
     azimuth_deg: float
+    tx_power_dbm: Optional[float] = None
 
 
 @dataclass

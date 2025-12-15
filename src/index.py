@@ -11,8 +11,20 @@ from pathlib import Path
 
 from api import JsApi
 from download_thread import DownloadThread
-from utils.entrypoint import get_entrypoint, set_interval
+from utils.entrypoint import set_interval
 
+
+def get_entrypoint() -> str:
+    """
+    Always use the gui/index.html in the project root (Parcel build output).
+    This avoids accidentally loading a frozen / old copy.
+    """
+    here = Path(__file__).resolve().parent
+    entry = (here / ".." / "gui" / "index.html").resolve()
+    logging.debug(f"Using frontend entrypoint: {entry}")
+    if not entry.exists():
+        raise FileNotFoundError(f"index.html not found at {entry}")
+    return str(entry)
 
 def configure_logging():
 

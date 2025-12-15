@@ -112,8 +112,11 @@ export default function ConfigModal() {
 
         // Propagation config with explicit defaults
         const propEnabledRaw = getVar(cfg2, "prop_enabled");
-        config.prop_enabled = (propEnabledRaw === 'True' || propEnabledRaw === 'true') ? true : false;
-        config.prop_data_source = getVar(cfg2, "prop_data_source") || 'pskreporter';
+        if (propEnabledRaw === undefined || propEnabledRaw === null || propEnabledRaw === '') {
+            config.prop_enabled = true;
+        } else {
+            config.prop_enabled = !(propEnabledRaw.toString().toLowerCase() === 'false');
+        }
         config.prop_refresh_minutes = Number(getVar(cfg2, "prop_refresh_minutes")) || 10;
         config.prop_ssb_threshold = Number(getVar(cfg2, "prop_ssb_threshold")) || 10;
         config.prop_digital_threshold = Number(getVar(cfg2, "prop_digital_threshold")) || -15;
@@ -140,7 +143,6 @@ export default function ConfigModal() {
 
         // Save propagation config
         setVar(config2, "prop_enabled", config.prop_enabled ? 'True' : 'False');
-        setVar(config2, "prop_data_source", config.prop_data_source);
         setVar(config2, "prop_refresh_minutes", config.prop_refresh_minutes.toString());
         setVar(config2, "prop_ssb_threshold", config.prop_ssb_threshold.toString());
         setVar(config2, "prop_digital_threshold", config.prop_digital_threshold.toString());
