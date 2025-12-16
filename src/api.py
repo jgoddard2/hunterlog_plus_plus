@@ -109,7 +109,7 @@ class JsApi:
                 return
             
             # Get refresh interval in minutes
-            refresh_minutes = self.db.config.get_value('prop_refresh_minutes') or 10
+            refresh_minutes = self.db.config.get_value('prop_refresh_minutes') or 3
             
             # Check if enough time has passed since last update
             now = datetime.datetime.now()
@@ -182,7 +182,7 @@ class JsApi:
             
             logging.info(f"[PROP FETCH] Starting kernel smoothing propagation fetch for band={band_name}, rx_grid={my_grid}")
             
-            refresh_minutes = self.db.config.get_value('prop_refresh_minutes') or 10
+            refresh_minutes = self.db.config.get_value('prop_refresh_minutes') or 3
             history_minutes = self.db.config.get_value('prop_history_minutes') or 0
             try:
                 history_minutes = int(history_minutes)
@@ -609,7 +609,7 @@ class JsApi:
         from propagation_kernel import SpotPath, batch_predict_snr, classify_snr
         from propagation_utils import grid_to_latlon, calculate_distance, calculate_bearing
 
-        refresh_minutes = self.db.config.get_value('prop_refresh_minutes') or 10
+        refresh_minutes = self.db.config.get_value('prop_refresh_minutes') or 3
         history_minutes = self.db.config.get_value('prop_history_minutes') or 0
         try:
             refresh_minutes = int(refresh_minutes)
@@ -1525,7 +1525,7 @@ class JsApi:
 
     def test_propagation_connection(self) -> str:
         '''
-        Test connection to the configured propagation data source.
+        Test connectivity to the WSPR Rocks propagation data source.
         
         :returns: API response with connection test result
         '''
@@ -1533,6 +1533,7 @@ class JsApi:
             from propagation_fetcher import PropagationDataFetcher
 
             fetcher = PropagationDataFetcher()
+            logging.info("Testing WSPR Rocks connection...")
             success = fetcher.test_connection()
             
             return self._response(True, "", connected=success)

@@ -19,7 +19,7 @@ const defData: UserConfig = {
     rig_if_type: '',
     scan_wait_time: 5,
     prop_enabled: true,
-    prop_refresh_minutes: 10,
+    prop_refresh_minutes: 3,
     prop_ssb_threshold: 10,
     prop_digital_threshold: -15,
     prop_distance_scale_km: 3000,

@@ -8,23 +8,12 @@ import platform
 import argparse
 import mimetypes
 from pathlib import Path
+import time
 
 from api import JsApi
 from download_thread import DownloadThread
-from utils.entrypoint import set_interval
+from utils.entrypoint import get_entrypoint, set_interval
 
-
-def get_entrypoint() -> str:
-    """
-    Always use the gui/index.html in the project root (Parcel build output).
-    This avoids accidentally loading a frozen / old copy.
-    """
-    here = Path(__file__).resolve().parent
-    entry = (here / ".." / "gui" / "index.html").resolve()
-    logging.debug(f"Using frontend entrypoint: {entry}")
-    if not entry.exists():
-        raise FileNotFoundError(f"index.html not found at {entry}")
-    return str(entry)
 
 def configure_logging():
 
@@ -131,6 +120,8 @@ if __name__ == '__main__':
 
     entry = get_entrypoint()
 
+    print(f"!!!!!entrypoint: {entry}")
+    
     (width, height) = the_api._get_win_size()
     (x, y) = the_api._get_win_pos()
     maxi = the_api._get_win_maximized()
@@ -157,9 +148,9 @@ if __name__ == '__main__':
     # server responded with a MIME type of "text/plain". Strict MIME type
     # checking is enforced for module scripts per HTML spec.
     mimetypes.add_type("application/javascript", ".js")
-
+    
     window = webview.create_window(
-        'HUNER LOG++',
+        'HUNtER LOG++',
         entry,
         js_api=the_api,
         maximized=maxi,

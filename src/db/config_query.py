@@ -199,7 +199,7 @@ class ConfigQuery:
         },
         {
             'key': 'prop_refresh_minutes',
-            'val': '10',
+            'val': '3',
             'type': 'int',
             'description': 'Minutes between propagation data refreshes',
             'group': 'propagation',

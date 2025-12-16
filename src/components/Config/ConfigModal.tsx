@@ -60,6 +60,12 @@ export default function ConfigModal() {
     const [value, setValue] = React.useState(0);
     const { config, setConfig } = useConfigContext();
     const { contextData, setData } = useAppContext();
+    const modalContainer = React.useMemo<HTMLElement | null>(() => {
+        if (typeof document === 'undefined') {
+            return null;
+        }
+        return document.body;
+    }, []);
 
 
     const handleOpen = () => setOpen(true);
@@ -117,7 +123,7 @@ export default function ConfigModal() {
         } else {
             config.prop_enabled = !(propEnabledRaw.toString().toLowerCase() === 'false');
         }
-        config.prop_refresh_minutes = Number(getVar(cfg2, "prop_refresh_minutes")) || 10;
+        config.prop_refresh_minutes = Number(getVar(cfg2, "prop_refresh_minutes")) || 3;
         config.prop_ssb_threshold = Number(getVar(cfg2, "prop_ssb_threshold")) || 10;
         config.prop_digital_threshold = Number(getVar(cfg2, "prop_digital_threshold")) || -15;
         config.prop_history_minutes = Number(getVar(cfg2, "prop_history_minutes")) || 30;
@@ -177,6 +183,8 @@ export default function ConfigModal() {
                 aria-describedby="unstyled-modal-description"
                 open={open}
                 onClose={handleCancel}
+                disableScrollLock
+                container={modalContainer ?? undefined}
                 slots={{ backdrop: StyledBackdrop }}
             >
                 <ModalContent sx={{ width: 800, minHeight: 500 }}>

@@ -74,7 +74,7 @@ export default function PropagationEstimationTab() {
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Typography variant="h6">Propagation Estimation 2</Typography>
+            <Typography variant="h6">Propagation Estimation </Typography>
 
             <Typography variant="body2" color="text.secondary">
                 Real-time propagation estimation based on digital-mode reception reports. Tune the refresh interval and smoothing to match your operating style.
@@ -97,7 +97,7 @@ export default function PropagationEstimationTab() {
                             <TextField
                                 label="Refresh Interval (minutes)"
                                 type="number"
-                                value={config.prop_refresh_minutes || 10}
+                                value={config.prop_refresh_minutes ?? 3}
                                 onChange={handleRefreshMinutesChange}
                                 helperText="How often to fetch data (1-60 min)"
                                 inputProps={{ min: 1, max: 60 }}
@@ -112,7 +112,7 @@ export default function PropagationEstimationTab() {
                                 size="small"
                                 sx={{ alignSelf: 'flex-start' }}
                             >
-                                {testingConnection ? 'Testing...' : 'Test Connection'}
+                                {testingConnection ? 'Testing...' : 'Test WSPR Connection'}
                             </Button>
 
                             {connectionStatus === 'success' && (
