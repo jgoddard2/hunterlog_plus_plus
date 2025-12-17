@@ -1,7 +1,68 @@
 import * as React from 'react';
-import { Box, TextField, Typography, Switch, FormControlLabel, Button, Alert, Slider, Tooltip, IconButton, Grid } from '@mui/material';
+import { Box, TextField, Typography, Switch, FormControlLabel, Button, Alert, Slider, Tooltip, IconButton, Grid, MenuItem } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useConfigContext } from './ConfigContextProvider';
+
+const KERNEL_PROFILES = [
+    {
+        id: 'global',
+        label: 'Profile 1 - Global Blend',
+        description: 'Wide aperture that blends worldwide WSPR reports for steady rankings.'
+    },
+    {
+        id: 'regional',
+        label: 'Profile 2 - Regional/Continental',
+        description: 'Balanced default tuned for most HF work across a continent.'
+    },
+    {
+        id: 'local',
+        label: 'Profile 3 - Local Skip Aware',
+        description: 'Tighter window that trims overly optimistic near-field assumptions.'
+    },
+    {
+        id: 'hyperlocal',
+        label: 'Profile 4 - Hyper-Local',
+        description: 'Best when you trust dense, nearby data and want highly responsive odds.'
+    }
+];
+
+const ANTENNA_OPTIONS = [
+    {
+        id: 'BASE_ISOTROPE',
+        label: 'Reference Isotropic (0 dBi)',
+        notes: 'Neutral baseline for unknown stations; VOACAP isotropic antenna.'
+    },
+    {
+        id: 'POTA_DIPOLE_5M',
+        label: 'Portable Dipole (5 m AGL)',
+        notes: 'Half-wave dipole on a 16 ft support; broadside bi-directional pattern.'
+    },
+    {
+        id: 'POTA_DIPOLE_10M',
+        label: 'Portable Dipole (10 m AGL)',
+        notes: 'Common 33 ft mast height for a dipole or inverted-V.'
+    },
+    {
+        id: 'DIPOLE_15M',
+        label: 'Station Dipole (15 m AGL)',
+        notes: 'Higher fixed-station dipole when you have a taller tower.'
+    },
+    {
+        id: 'PORTABLE_VERTICAL_QUARTER_AVG',
+        label: 'Quarter-Wave Vertical (Average ground)',
+        notes: '0.25 lambda vertical over average ground with omni pattern.'
+    },
+    {
+        id: 'PORTABLE_VERTICAL_QUARTER_GOOD',
+        label: 'Quarter-Wave Vertical (Good ground)',
+        notes: '0.25 lambda vertical modeled over good ground conductivity.'
+    },
+    {
+        id: 'PORTABLE_VERTICAL_DIPOLE_HVD025',
+        label: 'Half-Wave Vertical Dipole',
+        notes: '0.5 lambda vertical dipole fed at 0.25 lambda AGL; omnidirectional.'
+    }
+];
 
 export default function PropagationEstimationTab() {
     const { config, setConfig } = useConfigContext();
@@ -10,10 +71,7 @@ export default function PropagationEstimationTab() {
     const isPropEnabled = config.prop_enabled ?? true;
 
     const handleEnabledChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        console.log('[PropagationTab] Toggle changed to:', event.target.checked);
-        console.log('[PropagationTab] Current config.prop_enabled:', config.prop_enabled);
         const newConfig = { ...config, prop_enabled: event.target.checked };
-        console.log('[PropagationTab] Setting new config:', newConfig.prop_enabled);
         setConfig(newConfig);
     };
 
@@ -31,33 +89,21 @@ export default function PropagationEstimationTab() {
         }
     };
 
-    const handleSsbThresholdChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const val = parseInt(event.target.value);
-        if (!isNaN(val)) {
-            setConfig({ ...config, prop_ssb_threshold: val });
-        }
-    };
-
-    const handleDigitalThresholdChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const val = parseInt(event.target.value);
-        if (!isNaN(val)) {
-            setConfig({ ...config, prop_digital_threshold: val });
-        }
-    };
-
-    const handleDistanceScaleChange = (_event: Event, value: number | number[]) => {
-        const val = Array.isArray(value) ? value[0] : value;
-        setConfig({ ...config, prop_distance_scale_km: val });
-    };
-
-    const handleAzimuthScaleChange = (_event: Event, value: number | number[]) => {
-        const val = Array.isArray(value) ? value[0] : value;
-        setConfig({ ...config, prop_azimuth_scale_deg: val });
-    };
-
     const handleHistoryWindowChange = (_event: Event, value: number | number[]) => {
         const val = Array.isArray(value) ? value[0] : value;
         setConfig({ ...config, prop_history_minutes: val });
+    };
+
+    const handleKernelProfileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        setConfig({ ...config, prop_kernel_profile_id: event.target.value });
+    };
+
+    const handleTxAntennaChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        setConfig({ ...config, prop_tx_antenna_profile_id: event.target.value });
+    };
+
+    const handleRxAntennaChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        setConfig({ ...config, prop_rx_antenna_profile_id: event.target.value });
     };
 
     const handleTestConnection = async () => {
@@ -79,12 +125,25 @@ export default function PropagationEstimationTab() {
         }
     };
 
+    const selectedKernelProfile = React.useMemo(
+        () => KERNEL_PROFILES.find((profile) => profile.id === (config.prop_kernel_profile_id || 'regional')) ?? KERNEL_PROFILES[1],
+        [config.prop_kernel_profile_id]
+    );
+    const selectedTxAntenna = React.useMemo(
+        () => ANTENNA_OPTIONS.find((option) => option.id === (config.prop_tx_antenna_profile_id || 'POTA_DIPOLE_10M')) ?? ANTENNA_OPTIONS[2],
+        [config.prop_tx_antenna_profile_id]
+    );
+    const selectedRxAntenna = React.useMemo(
+        () => ANTENNA_OPTIONS.find((option) => option.id === (config.prop_rx_antenna_profile_id || 'POTA_DIPOLE_5M')) ?? ANTENNA_OPTIONS[1],
+        [config.prop_rx_antenna_profile_id]
+    );
+
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Typography variant="h6">Propagation Estimation </Typography>
 
             <Typography variant="body2" color="text.secondary">
-                Mad! Real-time propagation estimation based on digital-mode reception reports. Tune the refresh interval and smoothing to match your operating style.
+                Uses VOACAP modeling blended with real-time WSPR reception reports to estimate whether a spot's path will open. Adjust the refresh interval and blending controls to mirror your operating style.
             </Typography>
 
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -122,7 +181,11 @@ export default function PropagationEstimationTab() {
                                 disabled={!isPropEnabled}
                                 size="small"
                             />
+                        </Box>
+                    </Grid>
 
+                    <Grid item xs={12} md={6}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                             <Button
                                 variant="outlined"
                                 onClick={handleTestConnection}
@@ -140,46 +203,18 @@ export default function PropagationEstimationTab() {
                             {connectionStatus === 'error' && (
                                 <Alert severity="error">Connection failed. Check internet.</Alert>
                             )}
-                        </Box>
-                    </Grid>
-
-                    <Grid item xs={12} md={6}>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                            <Box sx={{ display: 'flex', gap: 2 }}>
-                                <TextField
-                                    label="SSB (dB)"
-                                    type="number"
-                                    value={config.prop_ssb_threshold || 6}
-                                    onChange={handleSsbThresholdChange}
-                                    helperText="Min SNR for voice"
-                                    disabled={!isPropEnabled}
-                                    size="small"
-                                    sx={{ flex: 1 }}
-                                />
-
-                                <TextField
-                                    label="Digital (dB)"
-                                    type="number"
-                                    value={config.prop_digital_threshold || -15}
-                                    onChange={handleDigitalThresholdChange}
-                                    helperText="Min SNR for digital"
-                                    disabled={!isPropEnabled}
-                                    size="small"
-                                    sx={{ flex: 1 }}
-                                />
-                            </Box>
 
                             <Box sx={{ p: 1.5, bgcolor: 'background.paper', borderRadius: 1 }}>
                                 <Typography variant="subtitle2" gutterBottom>Color Legend</Typography>
                                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.3 }}>
                                     <Typography variant="body2">
-                                        <span style={{ color: 'green', fontWeight: 'bold' }}>Green</span> - Prob&nbsp;A &gt; 75% (high confidence)
+                                        <span style={{ color: 'green', fontWeight: 'bold' }}>Green</span> - Prob A &gt; 75% (high confidence)
                                     </Typography>
                                     <Typography variant="body2">
-                                        <span style={{ color: '#f9a825', fontWeight: 'bold' }}>Yellow</span> - Prob&nbsp;A between 25% and 75%
+                                        <span style={{ color: '#f9a825', fontWeight: 'bold' }}>Yellow</span> - Prob A between 25% and 75%
                                     </Typography>
                                     <Typography variant="body2">
-                                        <span style={{ color: 'red', fontWeight: 'bold' }}>Red</span> - Prob&nbsp;A &lt; 25%
+                                        <span style={{ color: 'red', fontWeight: 'bold' }}>Red</span> - Prob A &lt; 25%
                                     </Typography>
                                     <Typography variant="body2">
                                         <span style={{ color: '#757575', fontWeight: 'bold' }}>Grey</span> - No recent data
@@ -192,8 +227,8 @@ export default function PropagationEstimationTab() {
                     <Grid item xs={12}>
                         <Box sx={{ p: 1.5, bgcolor: 'background.default', borderRadius: 1 }}>
                             <Typography variant="subtitle2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                Kernel Smoothing
-                                <Tooltip title="Lower values focus on paths very similar to yours; higher values blend more global reports.">
+                                Propagation Prediction Options
+                                <Tooltip title="We start with VOACAP's prediction for your station setup, then nudge it with current WSPR reception reports using an endpoint-aware kernel. Pick a blending profile and antenna pair that best matches you and the activator.">
                                     <IconButton size="small">
                                         <InfoOutlinedIcon fontSize="small" />
                                     </IconButton>
@@ -216,36 +251,60 @@ export default function PropagationEstimationTab() {
                                         Set to 0 to keep current behavior. Values above 0 fetch up to an hour of chunked predictions.
                                     </Typography>
                                 </Box>
-                                <Box>
-                                    <Typography variant="body2">Distance scale (km)</Typography>
-                                    <Slider
-                                        value={config.prop_distance_scale_km || 3000}
-                                        onChange={handleDistanceScaleChange}
-                                        min={500}
-                                        max={6000}
-                                        step={250}
-                                        valueLabelDisplay="auto"
-                                        disabled={!isPropEnabled}
-                                    />
-                                    <Typography variant="caption">
-                                        Larger numbers let distant reports influence predictions.
-                                    </Typography>
-                                </Box>
 
                                 <Box>
-                                    <Typography variant="body2">Azimuth scale (degrees)</Typography>
-                                    <Slider
-                                        value={config.prop_azimuth_scale_deg || 60}
-                                        onChange={handleAzimuthScaleChange}
-                                        min={10}
-                                        max={180}
-                                        step={5}
-                                        valueLabelDisplay="auto"
+                                    <TextField
+                                        select
+                                        fullWidth
+                                        label="Kernel profile"
+                                        value={config.prop_kernel_profile_id || 'regional'}
+                                        onChange={handleKernelProfileChange}
+                                        helperText={selectedKernelProfile?.description}
                                         disabled={!isPropEnabled}
-                                    />
-                                    <Typography variant="caption">
-                                        Higher values accept bigger differences in bearing.
-                                    </Typography>
+                                        size="small"
+                                    >
+                                        {KERNEL_PROFILES.map((profile) => (
+                                            <MenuItem key={profile.id} value={profile.id}>
+                                                {profile.label}
+                                            </MenuItem>
+                                        ))}
+                                    </TextField>
+                                </Box>
+
+                                <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2 }}>
+                                    <TextField
+                                        select
+                                        label="My antenna profile"
+                                        value={config.prop_tx_antenna_profile_id || 'POTA_DIPOLE_10M'}
+                                        onChange={handleTxAntennaChange}
+                                        helperText={selectedTxAntenna?.notes}
+                                        disabled={!isPropEnabled}
+                                        size="small"
+                                        sx={{ flex: 1 }}
+                                    >
+                                        {ANTENNA_OPTIONS.map((option) => (
+                                            <MenuItem key={option.id} value={option.id}>
+                                                {option.label}
+                                            </MenuItem>
+                                        ))}
+                                    </TextField>
+
+                                    <TextField
+                                        select
+                                        label="Activator antenna profile"
+                                        value={config.prop_rx_antenna_profile_id || 'POTA_DIPOLE_5M'}
+                                        onChange={handleRxAntennaChange}
+                                        helperText={selectedRxAntenna?.notes}
+                                        disabled={!isPropEnabled}
+                                        size="small"
+                                        sx={{ flex: 1 }}
+                                    >
+                                        {ANTENNA_OPTIONS.map((option) => (
+                                            <MenuItem key={option.id} value={option.id}>
+                                                {option.label}
+                                            </MenuItem>
+                                        ))}
+                                    </TextField>
                                 </Box>
                             </Box>
                         </Box>

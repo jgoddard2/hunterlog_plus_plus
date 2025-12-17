@@ -40,7 +40,7 @@ const columns: GridColDef[] = [
     {
         field: 'spotTime',
         headerName: 'Time',
-        width: 100,
+        width: 85,
         type: 'dateTime',
         valueGetter: (params: GridValueGetterParams) => {
             return new Date(params.row.spotTime);
@@ -61,7 +61,7 @@ const columns: GridColDef[] = [
     },
     { field: 'mode', headerName: 'Mode', width: 100 },
     {
-        field: 'locationDesc', headerName: 'Loc', width: 150,
+        field: 'locationDesc', headerName: 'Loc', width: 120,
         renderCell: (x) => {
             function getContent() {
                 return (
@@ -154,7 +154,21 @@ const columns: GridColDef[] = [
             const pp = (support !== undefined && support !== null) ? support.toFixed(1) : '--';
             const modeLabel = mode ? `${mode.toUpperCase()} ` : '';
 
-            return <span style={{ color, fontWeight: 'bold', fontSize: '0.85rem' }}>{`${modeLabel}${mm} | SNR: ${nn} | ${pp}`}</span>;
+            const circleStyle: React.CSSProperties = {
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                backgroundColor: color,
+                display: 'inline-block',
+                flex: '0 0 auto'
+            };
+
+            return (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 'bold', fontSize: '0.85rem', color: '#111' }}>
+                    <span style={circleStyle} />
+                    <span>{`${modeLabel}${mm} | SNR: ${nn} | ${pp}`}</span>
+                </span>
+            );
         }
     },
     {

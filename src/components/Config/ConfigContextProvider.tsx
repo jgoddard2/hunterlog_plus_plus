@@ -25,7 +25,10 @@ const defData: UserConfig = {
     prop_digital_threshold: -15,
     prop_distance_scale_km: 3000,
     prop_azimuth_scale_deg: 60,
-    prop_history_minutes: 30
+    prop_history_minutes: 30,
+    prop_kernel_profile_id: 'regional',
+    prop_tx_antenna_profile_id: 'POTA_DIPOLE_10M',
+    prop_rx_antenna_profile_id: 'POTA_DIPOLE_5M'
 };
 
 export interface ConfigContextType {
@@ -63,7 +66,10 @@ export const ConfigContextProvider = ({ children }: any) => {
             prop_digital_threshold: ctx.prop_digital_threshold,
             prop_distance_scale_km: ctx.prop_distance_scale_km,
             prop_azimuth_scale_deg: ctx.prop_azimuth_scale_deg,
-            prop_history_minutes: ctx.prop_history_minutes
+            prop_history_minutes: ctx.prop_history_minutes,
+            prop_kernel_profile_id: ctx.prop_kernel_profile_id || 'regional',
+            prop_tx_antenna_profile_id: ctx.prop_tx_antenna_profile_id || 'POTA_DIPOLE_10M',
+            prop_rx_antenna_profile_id: ctx.prop_rx_antenna_profile_id || 'POTA_DIPOLE_5M'
         };
         setConfigData(newContext);
     };

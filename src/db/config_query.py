@@ -259,6 +259,33 @@ class ConfigQuery:
             'group': 'propagation',
             'enabled': 'True',
             'editable': 'True'
+        },
+        {
+            'key': 'prop_kernel_profile_id',
+            'val': 'regional',
+            'type': 'string',
+            'description': 'Kernel EA profile selection for blending WSPR data',
+            'group': 'propagation',
+            'enabled': 'True',
+            'editable': 'True'
+        },
+        {
+            'key': 'prop_tx_antenna_profile_id',
+            'val': 'POTA_DIPOLE_10M',
+            'type': 'string',
+            'description': 'Default TX antenna profile for VOACAP (hunter)',
+            'group': 'propagation',
+            'enabled': 'True',
+            'editable': 'True'
+        },
+        {
+            'key': 'prop_rx_antenna_profile_id',
+            'val': 'POTA_DIPOLE_5M',
+            'type': 'string',
+            'description': 'Default RX antenna profile for VOACAP (activator)',
+            'group': 'propagation',
+            'enabled': 'True',
+            'editable': 'True'
         }
 
     ]

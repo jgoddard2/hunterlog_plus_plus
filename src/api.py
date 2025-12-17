@@ -10,6 +10,9 @@ from datetime import timedelta
 from propagation_fetcher import PropagationDataFetcher
 from propagation_kernel import (
     DEFAULT_SSN,
+    DEFAULT_KERNEL_PROFILE_ID,
+    DEFAULT_TX_ANTENNA_PROFILE_ID,
+    DEFAULT_RX_ANTENNA_PROFILE_ID,
     KERNEL_EA_MIN_N_EFF,
     MODE_THRESHOLDS_DB,
     PSKREPORTER_REFERENCE_BW_HZ,
@@ -17,6 +20,8 @@ from propagation_kernel import (
     PropagationReport,
     SpotPath,
     batch_predict_kernel_ea,
+    resolve_kernel_profile,
+    resolve_voacap_antenna_profile,
     watts_to_dbm,
 )
 from solar_ssn import resolve_noaa_ssn
@@ -41,6 +46,20 @@ from version import __version__
 from cat import CAT
 
 logging = L.getLogger(__name__)
+
+PROPAGATION_CONFIG_KEYS = [
+    'prop_enabled',
+    'prop_refresh_minutes',
+    'prop_default_ssn',
+    'prop_history_minutes',
+    'prop_ssb_threshold',
+    'prop_digital_threshold',
+    'prop_kernel_profile_id',
+    'prop_tx_antenna_profile_id',
+    'prop_rx_antenna_profile_id',
+    'prop_distance_scale_km',
+    'prop_azimuth_scale_deg',
+]
 
 
 class JsApi:
@@ -118,6 +137,49 @@ class JsApi:
         self.current_ssn_value = fallback
         self.current_ssn_source = 'fallback'
         self.current_ssn_updated = datetime.datetime.utcnow()
+
+    def _capture_propagation_settings(self) -> dict[str, object]:
+        """Snapshot current propagation-related config values."""
+        snapshot: dict[str, object] = {}
+        for key in PROPAGATION_CONFIG_KEYS:
+            try:
+                snapshot[key] = self.db.config.get_value(key)
+            except Exception:
+                snapshot[key] = None
+        return snapshot
+
+    def _clear_propagation_caches(self) -> None:
+        """Reset cached propagation landscapes/history."""
+        acquired = self.lock.acquire(timeout=4.0)
+        if not acquired:
+            logging.warning("[PROP CFG] Unable to acquire lock to clear propagation caches")
+            return
+        try:
+            self.prop_model_cache.clear()
+            self.propagation_snapshot.clear()
+            self.propagation_history.clear()
+            logging.info("[PROP CFG] Cleared cached propagation datasets due to config change")
+        finally:
+            self.lock.release()
+
+    def _handle_propagation_settings_change(self) -> None:
+        """Clear caches and rerun predictions for the current band."""
+        self._clear_propagation_caches()
+        try:
+            prop_enabled = bool(self.db.config.get_value('prop_enabled'))
+        except Exception:
+            prop_enabled = False
+
+        if not prop_enabled:
+            logging.info("[PROP CFG] Propagation settings changed while feature disabled; caches cleared only")
+            return
+
+        band_id = self.current_band_id or self.db.filters.band_filter
+        if band_id and band_id != 0:
+            logging.info("[PROP CFG] Propagation settings changed; refreshing predictions for band %s", band_id)
+            self.trigger_propagation_fetch(band_id)
+        else:
+            logging.info("[PROP CFG] Propagation settings changed but no band is selected; waiting for next trigger")
 
     def _get_configured_default_ssn(self) -> float:
         """Read the user-configured fallback SSN, with validation."""
@@ -416,6 +478,13 @@ class JsApi:
                 except (TypeError, ValueError):
                     digital_threshold = MODE_THRESHOLDS_DB['digital']
                 mode_thresholds = {'ssb': ssb_threshold, 'digital': digital_threshold}
+                kernel_profile_id = str(self.db.config.get_value('prop_kernel_profile_id') or DEFAULT_KERNEL_PROFILE_ID).lower()
+                kernel_profile = resolve_kernel_profile(kernel_profile_id)
+                tx_antenna_id = self.db.config.get_value('prop_tx_antenna_profile_id') or DEFAULT_TX_ANTENNA_PROFILE_ID
+                rx_antenna_id = self.db.config.get_value('prop_rx_antenna_profile_id') or DEFAULT_RX_ANTENNA_PROFILE_ID
+                tx_antenna_profile = resolve_voacap_antenna_profile(tx_antenna_id, DEFAULT_TX_ANTENNA_PROFILE_ID)
+                rx_antenna_profile = resolve_voacap_antenna_profile(rx_antenna_id, DEFAULT_RX_ANTENNA_PROFILE_ID)
+                min_support_override = float(kernel_profile.get('min_n_eff', KERNEL_EA_MIN_N_EFF))
                 logging.info(f"[PROP MODEL] Building prediction model for {len(spot_paths)} active spots on {band_name}")
 
                 predictor_kwargs = {
@@ -427,7 +496,10 @@ class JsApi:
                     'ssn': self._refresh_current_ssn(),
                     'reference_bw_hz': PSKREPORTER_REFERENCE_BW_HZ,
                     'mode_thresholds': mode_thresholds,
-                    'min_support': KERNEL_EA_MIN_N_EFF,
+                    'min_support': min_support_override,
+                    'kernel_profile': kernel_profile,
+                    'tx_antenna_profile': tx_antenna_profile,
+                    'rx_antenna_profile': rx_antenna_profile,
                 }
 
                 prediction_series: List[Tuple[datetime.datetime, dict[int, PropagationEstimate]]] = []
@@ -793,6 +865,13 @@ class JsApi:
             except (TypeError, ValueError):
                 digital_threshold = MODE_THRESHOLDS_DB['digital']
             mode_thresholds = {'ssb': ssb_threshold, 'digital': digital_threshold}
+            kernel_profile_id = str(self.db.config.get_value('prop_kernel_profile_id') or DEFAULT_KERNEL_PROFILE_ID).lower()
+            kernel_profile = resolve_kernel_profile(kernel_profile_id)
+            tx_antenna_id = self.db.config.get_value('prop_tx_antenna_profile_id') or DEFAULT_TX_ANTENNA_PROFILE_ID
+            rx_antenna_id = self.db.config.get_value('prop_rx_antenna_profile_id') or DEFAULT_RX_ANTENNA_PROFILE_ID
+            tx_antenna_profile = resolve_voacap_antenna_profile(tx_antenna_id, DEFAULT_TX_ANTENNA_PROFILE_ID)
+            rx_antenna_profile = resolve_voacap_antenna_profile(rx_antenna_id, DEFAULT_RX_ANTENNA_PROFILE_ID)
+            min_support_override = float(kernel_profile.get('min_n_eff', KERNEL_EA_MIN_N_EFF))
 
             predictor_kwargs = {
                 'hunter_grid': my_grid,
@@ -803,7 +882,10 @@ class JsApi:
                 'ssn': self._refresh_current_ssn(),
                 'reference_bw_hz': PSKREPORTER_REFERENCE_BW_HZ,
                 'mode_thresholds': mode_thresholds,
-                'min_support': KERNEL_EA_MIN_N_EFF,
+                'min_support': min_support_override,
+                'kernel_profile': kernel_profile,
+                'tx_antenna_profile': tx_antenna_profile,
+                'rx_antenna_profile': rx_antenna_profile,
             }
 
             prediction_series: List[Tuple[datetime.datetime, dict[int, PropagationEstimate]]] = []
@@ -1279,11 +1361,8 @@ class JsApi:
     def set_user_config2(self, config2_json: any):
         logging.debug(f"setting config2 {config2_json}")
         # self.db.update_user_config(config2_json)
-        try:
-            prev_prop_enabled = self.db.config.get_value('prop_enabled')
-        except KeyError:
-            prev_prop_enabled = False
-
+        prev_prop_settings = self._capture_propagation_settings()
+        prev_prop_enabled = bool(prev_prop_settings.get('prop_enabled'))
         self.db.config.set_editable_json(config2_json)
 
         lp = LoggerParams(
@@ -1296,15 +1375,24 @@ class JsApi:
         self.adif_log = LoggerInterface.get_logger(lp, __version__)
         logging.debug(f"updating logger {self.adif_log}")
 
+        new_prop_settings = self._capture_propagation_settings()
+        new_prop_enabled = bool(new_prop_settings.get('prop_enabled'))
+        settings_changed = any(
+            str(prev_prop_settings.get(key)) != str(new_prop_settings.get(key))
+            for key in PROPAGATION_CONFIG_KEYS
+            if key != 'prop_enabled'
+        )
+
         try:
-            new_prop_enabled = self.db.config.get_value('prop_enabled')
             if not prev_prop_enabled and new_prop_enabled:
-                band_id = self.db.filters.band_filter
-                if band_id and band_id != 0:
-                    logging.info("[PROP FETCH] Propagation enabled via config; priming landscape for current band")
-                    self.trigger_propagation_fetch(band_id)
-                else:
-                    logging.info("[PROP FETCH] Propagation enabled but no band is selected; skipping automatic fetch")
+                logging.info("[PROP FETCH] Propagation enabled via config; refreshing predictions for active band")
+                self._handle_propagation_settings_change()
+            elif prev_prop_enabled and not new_prop_enabled:
+                logging.info("[PROP FETCH] Propagation disabled via config; clearing cached predictions")
+                self._clear_propagation_caches()
+            elif new_prop_enabled and settings_changed:
+                logging.info("[PROP CFG] Propagation settings updated; re-running predictions")
+                self._handle_propagation_settings_change()
         except Exception as ex:
             logging.error("Error triggering propagation fetch after enabling propagation", exc_info=ex)
 

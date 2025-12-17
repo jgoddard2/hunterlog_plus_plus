@@ -61,6 +61,133 @@ KERNEL_EA_GAMMA = 2.0
 KERNEL_EA_MIN_N_EFF = 5.0
 DEFAULT_WSPR_TX_POWER_DBM = 33.0  # ~2W when TX power is missing
 
+KERNEL_EA_PROFILE_GLOBAL = {
+    "r_tx_km": 3000.0,
+    "r_rx_km": 3000.0,
+    "min_weight": 1e-12,
+    "min_n_eff": 20.0,
+}
+KERNEL_EA_PROFILE_REGIONAL = {
+    "r_tx_km": 1500.0,
+    "r_rx_km": 1500.0,
+    "min_weight": 1e-10,
+    "min_n_eff": 15.0,
+}
+KERNEL_EA_PROFILE_LOCAL = {
+    "r_tx_km": 600.0,
+    "r_rx_km": 600.0,
+    "min_weight": 1e-8,
+    "min_n_eff": 10.0,
+}
+KERNEL_EA_PROFILE_HYPERLOCAL = {
+    "r_tx_km": 200.0,
+    "r_rx_km": 200.0,
+    "min_weight": 1e-6,
+    "min_n_eff": 6.0,
+}
+
+KERNEL_EA_PROFILES = {
+    "global": KERNEL_EA_PROFILE_GLOBAL,
+    "regional": KERNEL_EA_PROFILE_REGIONAL,
+    "local": KERNEL_EA_PROFILE_LOCAL,
+    "hyperlocal": KERNEL_EA_PROFILE_HYPERLOCAL,
+}
+DEFAULT_KERNEL_PROFILE_ID = "regional"
+
+VOACAP_ANTENNA_PROFILES = [
+    {
+        "id": "BASE_ISOTROPE",
+        "tx_antenna_code": "ISOTROPE",
+        "rx_antenna_code": "ISOTROPE",
+        "polarization": "theoretical",
+        "geometry": {"gain_dbi": 0.0, "pattern": "omni"},
+        "height_agl_m": None,
+        "ground": None,
+        "min_toa_deg_suggestion": 0.1,
+        "notes": "Benchmark / unknown-station baseline. VOACAP calls this 0 dBi isotropic.",
+    },
+    {
+        "id": "POTA_DIPOLE_5M",
+        "tx_antenna_code": "D05M",
+        "rx_antenna_code": "ISOTROPE",
+        "polarization": "horizontal",
+        "geometry": {"type": "half-wave dipole", "height_agl_m": 5, "pattern": "broadside (bi-directional)"},
+        "ground": "typical",
+        "min_toa_deg_suggestion": 3.0,
+        "notes": "Portable inverted-V/dipole on ~16 ft support. DxxM means dipole at xx meters AGL.",
+    },
+    {
+        "id": "POTA_DIPOLE_10M",
+        "tx_antenna_code": "D10M",
+        "rx_antenna_code": "ISOTROPE",
+        "polarization": "horizontal",
+        "geometry": {"type": "half-wave dipole", "height_agl_m": 10, "pattern": "broadside (bi-directional)"},
+        "ground": "typical",
+        "min_toa_deg_suggestion": 3.0,
+        "notes": "Very common portable mast height (~33 ft).",
+    },
+    {
+        "id": "DIPOLE_15M",
+        "tx_antenna_code": "D15M",
+        "rx_antenna_code": "ISOTROPE",
+        "polarization": "horizontal",
+        "geometry": {"type": "half-wave dipole", "height_agl_m": 15, "pattern": "broadside (bi-directional)"},
+        "ground": "typical",
+        "min_toa_deg_suggestion": 3.0,
+        "notes": "Higher horizontal dipole for home stations.",
+    },
+    {
+        "id": "PORTABLE_VERTICAL_QUARTER_AVG",
+        "tx_antenna_code": "V14",
+        "rx_antenna_code": "ISOTROPE",
+        "polarization": "vertical",
+        "geometry": {"type": "quarter-wave vertical", "length_lambda": 0.25, "pattern": "omni"},
+        "ground": "Average",
+        "min_toa_deg_suggestion": 0.1,
+        "notes": "Quarter-wave vertical over Average ground.",
+    },
+    {
+        "id": "PORTABLE_VERTICAL_QUARTER_GOOD",
+        "tx_antenna_code": "V14GD",
+        "rx_antenna_code": "ISOTROPE",
+        "polarization": "vertical",
+        "geometry": {"type": "quarter-wave vertical", "length_lambda": 0.25, "pattern": "omni"},
+        "ground": "Good",
+        "min_toa_deg_suggestion": 0.1,
+        "notes": "Quarter-wave vertical over Good ground.",
+    },
+    {
+        "id": "PORTABLE_VERTICAL_DIPOLE_HVD025",
+        "tx_antenna_code": "HVD025",
+        "rx_antenna_code": "ISOTROPE",
+        "polarization": "vertical",
+        "geometry": {"type": "half-wave vertical dipole", "feedpoint_height_lambda": 0.25, "pattern": "omni"},
+        "ground": "typical",
+        "min_toa_deg_suggestion": 0.1,
+        "notes": "Half-wave vertical dipole fed at 0.25 wavelengths AGL.",
+    },
+]
+
+VOACAP_ANTENNA_PROFILE_LOOKUP = {profile["id"]: profile for profile in VOACAP_ANTENNA_PROFILES}
+DEFAULT_TX_ANTENNA_PROFILE_ID = "POTA_DIPOLE_10M"
+DEFAULT_RX_ANTENNA_PROFILE_ID = "POTA_DIPOLE_5M"
+
+
+def resolve_kernel_profile(profile_id: Optional[str]) -> dict[str, float]:
+    """Return the kernel EA profile dict for the requested id."""
+    if not profile_id:
+        return KERNEL_EA_PROFILES[DEFAULT_KERNEL_PROFILE_ID]
+    key = str(profile_id).lower()
+    return KERNEL_EA_PROFILES.get(key, KERNEL_EA_PROFILES[DEFAULT_KERNEL_PROFILE_ID])
+
+
+def resolve_voacap_antenna_profile(profile_id: Optional[str], default_id: str) -> dict[str, object]:
+    """Return a VOACAP antenna profile entry for the requested id."""
+    key = (profile_id or default_id or "").upper()
+    if key in VOACAP_ANTENNA_PROFILE_LOOKUP:
+        return VOACAP_ANTENNA_PROFILE_LOOKUP[key]
+    return VOACAP_ANTENNA_PROFILE_LOOKUP[default_id]
+
 # VOACAP defaults
 MIN_TAKEOFF_DEG = 3.0
 RESIDENTIAL_NOISE_DB = 145.0
@@ -503,7 +630,9 @@ def predict_voacap_for_path(hunter_grid: str,
                             ssn: float,
                             tx_power_watts: float,
                             reference_bw_hz: float,
-                            snr_threshold_dbhz: float) -> Tuple[Optional[float], Optional[float]]:
+                            snr_threshold_dbhz: float,
+                            tx_antenna: Optional[dict] = None,
+                            rx_antenna: Optional[dict] = None) -> Tuple[Optional[float], Optional[float]]:
     if PredictionEngine is None or GeoPoint is None:
         raise RuntimeError("dvoacap is not installed; please add it to requirements.")
     if not hunter_grid or not target_grid:
@@ -524,8 +653,18 @@ def predict_voacap_for_path(hunter_grid: str,
     params.ssn = float(ssn)
     params.month = now.month
     params.tx_power = float(tx_power_watts) if tx_power_watts > 0 else 1.0
+
+    if tx_antenna and tx_antenna.get("tx_antenna_code"):
+        setattr(params, "tx_antenna_code", tx_antenna["tx_antenna_code"])
+    if rx_antenna and rx_antenna.get("rx_antenna_code"):
+        setattr(params, "rx_antenna_code", rx_antenna["rx_antenna_code"])
+
+    tx_min_angle = float(tx_antenna.get("min_toa_deg_suggestion")) if tx_antenna and tx_antenna.get("min_toa_deg_suggestion") is not None else MIN_TAKEOFF_DEG
+    rx_min_angle = float(rx_antenna.get("min_toa_deg_suggestion")) if rx_antenna and rx_antenna.get("min_toa_deg_suggestion") is not None else MIN_TAKEOFF_DEG
+    min_takeoff_deg = max(MIN_TAKEOFF_DEG, tx_min_angle, rx_min_angle)
+
     params.tx_location = GeoPoint.from_degrees(hunter_lat, hunter_lon)
-    params.min_angle = math.radians(MIN_TAKEOFF_DEG)
+    params.min_angle = math.radians(min_takeoff_deg)
     params.man_made_noise_at_3mhz = RESIDENTIAL_NOISE_DB
     params.required_snr = REQUIRED_SNR_DBHZ
     params.required_reliability = REQUIRED_RELIABILITY
@@ -568,11 +707,23 @@ def batch_predict_kernel_ea(
     ssn: float = DEFAULT_SSN,
     reference_bw_hz: float = PSKREPORTER_REFERENCE_BW_HZ,
     mode_thresholds: Dict[str, float] = MODE_THRESHOLDS_DB,
-    min_support: float = KERNEL_EA_MIN_N_EFF,
+    min_support: Optional[float] = None,
+    kernel_profile: Optional[dict] = None,
+    tx_antenna_profile: Optional[dict] = None,
+    rx_antenna_profile: Optional[dict] = None,
 ) -> Dict[int, PropagationEstimate]:
     predictions: Dict[int, PropagationEstimate] = {}
     if not spot_paths:
         return predictions
+
+    profile_settings = kernel_profile or resolve_kernel_profile(None)
+    r_tx_km = float(profile_settings.get("r_tx_km", KERNEL_EA_TX_RADIUS_KM))
+    r_rx_km = float(profile_settings.get("r_rx_km", KERNEL_EA_RX_RADIUS_KM))
+    min_weight = float(profile_settings.get("min_weight", KERNEL_EA_MIN_WEIGHT))
+    profile_min_support = float(profile_settings.get("min_n_eff", KERNEL_EA_MIN_N_EFF))
+    support_threshold = float(min_support) if min_support is not None else profile_min_support
+    tx_profile = tx_antenna_profile or resolve_voacap_antenna_profile(None, DEFAULT_TX_ANTENNA_PROFILE_ID)
+    rx_profile = rx_antenna_profile or resolve_voacap_antenna_profile(None, DEFAULT_RX_ANTENNA_PROFILE_ID)
 
     dataset_cache: Dict[str, Optional[EndpointKernelArrays]] = {}
     for band, reports in reports_by_band.items():
@@ -607,9 +758,9 @@ def batch_predict_kernel_ea(
                 target_lat=spot.target_lat,
                 target_lon=spot.target_lon,
                 user_power_dbm=user_power_dbm,
-                r_tx_km=KERNEL_EA_TX_RADIUS_KM,
-                r_rx_km=KERNEL_EA_RX_RADIUS_KM,
-                min_weight=KERNEL_EA_MIN_WEIGHT,
+                r_tx_km=r_tx_km,
+                r_rx_km=r_rx_km,
+                min_weight=min_weight,
                 top_k=KERNEL_EA_TOP_K,
                 sharpen_gamma=KERNEL_EA_GAMMA,
                 threshold_db=threshold_db,
@@ -628,6 +779,8 @@ def batch_predict_kernel_ea(
                 tx_power_watts=user_power_watts,
                 reference_bw_hz=reference_bw_hz,
                 snr_threshold_dbhz=threshold_dbhz,
+                tx_antenna=tx_profile,
+                rx_antenna=rx_profile,
             )
         except Exception as exc:
             logging.debug("[VOACAP] Prediction failure for spot %s: %s", spot.spot_id, exc)
@@ -636,7 +789,7 @@ def batch_predict_kernel_ea(
         voacap_unreachable = voacap_snr is not None and voacap_snr < MODE_THRESHOLDS_DB['digital']
 
         probability: Optional[float] = None
-        if kernel_prob is not None and math.isfinite(kernel_prob) and n_eff >= min_support:
+        if kernel_prob is not None and math.isfinite(kernel_prob) and n_eff >= support_threshold:
             k0_prob = K0_UNREACHABLE if voacap_unreachable else K0_DEFAULT
             probability = shrink_with_voacap_prior(kernel_prob, n_eff, voacap_prob, k0_prob)
         elif voacap_prob is not None:

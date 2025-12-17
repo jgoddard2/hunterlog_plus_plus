@@ -39,6 +39,38 @@ This fork includes the following additional features:
   * Visual indicators for currently scanned station
   * See [Scanning Feature](#scanning-feature) for detailed usage instructions
 
+## Hunterlog++ Exclusive Features
+
+### SCAN Button Overview
+
+The **SCAN** button is an easy way to let Hunterlog++ walk through every spot that matches your current filters.  
+When you press **Scan** in the toolbar:
+
+- Your radio will QSY through the filtered list, pausing on each spot for the configured wait time.
+- The active spot row stays highlighted while the green frequency badge turns yellow so you always know which station is tuned.
+- Pressing PTT or clicking **Stop Scan** halts the sequence immediately so you can call the activator.
+
+Tip: because scanning honors every filter (band, mode, region, hunted status, etc.), dial in the view you care about and let the SCAN button do the rest—perfect for monitoring a busy band while still keeping hands free for logging.
+
+### Propagation Estimation
+
+Hunterlog++ includes a propagation panel that predicts the odds of a successful contact for each spot. The interface lets you:
+
+- Fetch live Signal-to-Noise and probability estimates every few minutes.
+- Choose between global, regional, local, or hyper-local Kernel EA blending profiles.
+- Describe both your antenna and the activator’s antenna with realistic VOACAP presets.
+- See color-coded probabilities and an hour of history for any highlighted spot.
+
+This gives a quick read on whether a park is “likely workable” before you ever spin the dial.
+
+#### How the Propagation Method Works
+
+1. **VOACAP Baseline** – For every hunter/activator pair we feed your grids, selected antennas, transmit power, and the current NOAA sunspot number into VOACAP. This produces a classic physics-based prediction for SNR and link probability.
+2. **Endpoint-Aware Kernel Smoothing** – Simultaneously, we harvest real-time WSPR reception reports for the same band. An endpoint-aware kernel (EA) compares each report’s geometry (distance, azimuth, TX/RX endpoints) to the hunter/activator path. Tunable profiles adjust how global or local that comparison should be.
+3. **Blending the Two** – When we have ample WSPR support, the kernel probability is shrunk toward the VOACAP prior to avoid runaway optimism. If WSPR density is light, we lean more on VOACAP’s reliability. The end result is a probability slider (and SNR estimate) that reflects both the modeled ionosphere and what the bands are *actually* doing in the last few minutes.
+
+Because the VOACAP run includes your antenna choice—and the activator’s presumed setup—you can explore “what if” scenarios (e.g., small vertical vs. higher dipole) and immediately see how the odds shift.
+
 ## Community
 
 If you're not comfortable using Github to submit issues and enhancement requests, feel free to join our Discord community server. Hop in and ask questions, share comments, propose new features or get help using Hunterlog.
