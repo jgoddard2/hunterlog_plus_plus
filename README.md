@@ -29,16 +29,6 @@ CAT control, and log them to your master logger. It will also keep track of the 
 * Use CAT control to immediately jump to a spot
   * supports: FLRIG, RIGCTLD, and N3FJP's CAT API (more possible)
 
-## Hunterlog++ Enhancements
-
-This fork includes the following additional features:
-
-* **Automatic Scanning** - Automatically cycle through filtered POTA/SOTA spots
-  * Configurable wait time per station
-  * Smart PTT detection to pause scanning when transmitting
-  * Visual indicators for currently scanned station
-  * See [Scanning Feature](#scanning-feature) for detailed usage instructions
-
 ## Hunterlog++ Exclusive Features
 
 ### SCAN Button Overview
