@@ -1,6 +1,6 @@
 # Hunterlog++
 
-> **Note:** This is an enhanced fork of the original [Hunterlog by N9FZ](https://github.com/cwhelchel/hunterlog) with additional features and improvements.
+> **Note:** This is an enhanced fork of the original [Hunterlog by N9FZ](https://github.com/cwhelchel/hunterlog) with additional features and improvements by [Jerome Goddard II W4IJG](https://github.com/jgoddard2/).
 
 [![GitHub Release](https://img.shields.io/badge/download-windows-green)](https://github.com/cwhelchel/hunterlog/releases/download/v0.0.9/hunterlog_0.0.9.zip)
 [![GitHub Release](https://img.shields.io/badge/download-linux-green)](https://github.com/cwhelchel/hunterlog/releases/download/v0.0.9/hunterlog-ubuntu_0.0.9-hotfix.zip)
