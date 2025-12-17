@@ -33,6 +33,7 @@ def check_and_init_config():
                 ('prop_enabled', 'True', 'bool', 'Enable propagation estimation feature', 'propagation', 'True', 'True'),
                 ('prop_enabled_seeded', 'False', 'bool', 'Internal propagation default flag', 'propagation', 'False', 'False'),
                 ('prop_refresh_minutes', '3', 'int', 'Propagation data refresh interval in minutes', 'propagation', 'True', 'True'),
+                ('prop_default_ssn', '61', 'float', 'Fallback SSN when NOAA data is unavailable', 'propagation', 'True', 'True'),
                 ('prop_ssb_threshold', '10', 'int', 'SSB SNR threshold in dB', 'propagation', 'True', 'True'),
                 ('prop_digital_threshold', '-15', 'int', 'Digital SNR threshold in dB', 'propagation', 'True', 'True'),
             ]

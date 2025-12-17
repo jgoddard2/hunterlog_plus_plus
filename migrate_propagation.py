@@ -31,7 +31,9 @@ def add_propagation_columns():
         columns_to_add = [
             ("propagation_snr", "REAL"),
             ("propagation_status", "TEXT"),
-            ("propagation_updated", "TIMESTAMP")
+            ("propagation_updated", "TIMESTAMP"),
+            ("propagation_probability", "REAL"),
+            ("propagation_support", "REAL"),
         ]
         
         for col_name, col_type in columns_to_add:

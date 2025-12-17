@@ -115,7 +115,7 @@ def calculate_bearing(grid1: str, grid2: str) -> float:
 
 def determine_propagation_status(
     snr: float,
-    ssb_threshold: float = 10.0,
+    ssb_threshold: float = 6.0,
     digital_threshold: float = -15.0
 ) -> str:
     """

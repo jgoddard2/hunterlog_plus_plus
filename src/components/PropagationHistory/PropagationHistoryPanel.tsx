@@ -3,6 +3,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
 
 import { useAppContext } from '../AppContext';
 import { PropagationHistoryPoint } from '../../@types/Spots';
@@ -20,24 +21,14 @@ function formatTimeLabel(iso: string) {
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function classifyCapability(snr: number | null | undefined) {
-    if (snr === undefined || snr === null) {
-        return 'No data';
-    }
-    if (snr >= 10) {
-        return 'SSB';
-    }
-    if (snr >= -15) {
-        return 'Digital';
-    }
-    return 'N/R';
-}
+type ChartMode = 'probability' | 'snr';
 
 interface ChartProps {
     data: PropagationHistoryPoint[];
+    mode: ChartMode;
 }
 
-const PropagationHistoryChart = ({ data }: ChartProps) => {
+const PropagationHistoryChart = ({ data, mode }: ChartProps) => {
     if (!data || data.length === 0) {
         return (
             <div className='propagationChartEmpty'>
@@ -49,44 +40,91 @@ const PropagationHistoryChart = ({ data }: ChartProps) => {
     const sorted = [...data].sort(
         (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
-    const snrValues = sorted.map((point) => point.snr);
-    const minSNR = Math.min(...snrValues, -30);
-    const maxSNR = Math.max(...snrValues, 10);
-    const yRange = Math.max(maxSNR - minSNR, 1);
-    const xRange = Math.max(sorted.length - 1, 1);
 
+    const validPoints = sorted
+        .map((point) => {
+            if (mode === 'probability') {
+                if (typeof point.probability !== 'number') {
+                    return null;
+                }
+                const percent = Math.max(0, Math.min(point.probability * 100, 100));
+                return { timestamp: point.timestamp, value: percent };
+            }
+            if (typeof point.snr !== 'number') {
+                return null;
+            }
+            return { timestamp: point.timestamp, value: point.snr };
+        })
+        .filter((point): point is { timestamp: string; value: number } => point !== null);
+
+    if (!validPoints.length) {
+        return (
+            <div className='propagationChartEmpty'>
+                {mode === 'probability'
+                    ? 'No probability data yet.'
+                    : 'No propagation predictions for the past hour.'}
+            </div>
+        );
+    }
+
+    let axisMin: number;
+    let axisMax: number;
+    let gridStep: number;
+    let axisSuffix: string;
+
+    if (mode === 'probability') {
+        axisMin = 0;
+        axisMax = 100;
+        gridStep = 10;
+        axisSuffix = '%';
+    } else {
+        const values = validPoints.map((point) => point.value);
+        const rawMin = Math.min(...values, -30);
+        const rawMax = Math.max(...values, 10);
+        gridStep = 5;
+        axisSuffix = ' dB';
+        axisMin = Math.floor(rawMin / gridStep) * gridStep;
+        axisMax = Math.ceil(rawMax / gridStep) * gridStep;
+        if (axisMax - axisMin < gridStep) {
+            axisMax = axisMin + gridStep;
+        }
+    }
+
+    const yRange = Math.max(axisMax - axisMin, 1);
+    const xRange = Math.max(validPoints.length - 1, 1);
     const paddingX = 24;
     const paddingY = 16;
 
-    const points = sorted.map((point, idx) => {
+    const points = validPoints.map((point, idx) => {
         const x =
             paddingX + (idx / xRange) * (DEFAULT_WIDTH - paddingX * 2);
         const y =
             DEFAULT_HEIGHT -
             paddingY -
-            ((point.snr - minSNR) / yRange) * (DEFAULT_HEIGHT - paddingY * 2);
+            ((point.value - axisMin) / yRange) * (DEFAULT_HEIGHT - paddingY * 2);
         return `${x},${y}`;
     }).join(' ');
 
     const gridLines: number[] = [];
-    const gridStep = 5;
-    const start = Math.floor(minSNR / gridStep) * gridStep;
-    for (let v = start; v <= maxSNR; v += gridStep) {
-        gridLines.push(v);
+    for (let v = axisMin; v <= axisMax + 1e-6; v += gridStep) {
+        gridLines.push(parseFloat(v.toFixed(4)));
     }
 
-    const firstLabel = formatTimeLabel(sorted[0].timestamp);
-    const lastLabel = formatTimeLabel(sorted[sorted.length - 1].timestamp);
+    const firstLabel = formatTimeLabel(validPoints[0].timestamp);
+    const lastLabel = formatTimeLabel(validPoints[validPoints.length - 1].timestamp);
 
     return (
         <div className='propagationChart'>
+            <div className='propagationChartModeLabel'>
+                {mode === 'probability' ? 'Probability' : 'SNR'}
+            </div>
             <svg
                 className='propagationChartSvg'
                 viewBox={`0 0 ${DEFAULT_WIDTH} ${DEFAULT_HEIGHT}`}
                 preserveAspectRatio="none"
             >
                 <defs>
-                    <linearGradient id="propGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <linearGradient id={`propGradient-${mode}`} x1="0%" y1="0%" x2="0%" y2="100%">
                         <stop offset="0%" stopColor="#80ffdb" stopOpacity="0.35" />
                         <stop offset="100%" stopColor="#5390d9" stopOpacity="0" />
                     </linearGradient>
@@ -104,9 +142,9 @@ const PropagationHistoryChart = ({ data }: ChartProps) => {
                     const y =
                         DEFAULT_HEIGHT -
                         paddingY -
-                        ((value - minSNR) / yRange) * (DEFAULT_HEIGHT - paddingY * 2);
+                        ((value - axisMin) / yRange) * (DEFAULT_HEIGHT - paddingY * 2);
                     return (
-                        <g key={value}>
+                        <g key={`${mode}-${value}`}>
                             <line
                                 x1={paddingX}
                                 x2={DEFAULT_WIDTH - paddingX}
@@ -119,17 +157,17 @@ const PropagationHistoryChart = ({ data }: ChartProps) => {
                                 y={y + 4}
                                 className='propagationChartAxisLabel'
                             >
-                                {value} dB
+                                {`${value}${axisSuffix}`}
                             </text>
                         </g>
                     );
                 })}
 
                 <polyline
-                    fill="url(#propGradient)"
+                    fill={`url(#propGradient-${mode})`}
                     stroke="none"
                     points={`${paddingX},${DEFAULT_HEIGHT - paddingY} ${points} ${DEFAULT_WIDTH - paddingX},${DEFAULT_HEIGHT - paddingY}`}
-                    opacity={0.4}
+                    opacity={0.35}
                 />
 
                 <polyline
@@ -139,13 +177,13 @@ const PropagationHistoryChart = ({ data }: ChartProps) => {
                     points={points}
                 />
 
-                {sorted.map((point, idx) => {
+                {validPoints.map((point, idx) => {
                     const x =
                         paddingX + (idx / xRange) * (DEFAULT_WIDTH - paddingX * 2);
                     const y =
                         DEFAULT_HEIGHT -
                         paddingY -
-                        ((point.snr - minSNR) / yRange) * (DEFAULT_HEIGHT - paddingY * 2);
+                        ((point.value - axisMin) / yRange) * (DEFAULT_HEIGHT - paddingY * 2);
                     return (
                         <circle
                             key={`${point.timestamp}-${idx}`}
@@ -184,6 +222,11 @@ const PropagationHistoryChart = ({ data }: ChartProps) => {
     );
 };
 
+interface SsnInfo {
+    value: number | null;
+    source: 'observed' | 'fallback' | null;
+}
+
 const PropagationHistoryPanel = () => {
     const { contextData, setData } = useAppContext();
     const [history, setHistory] = React.useState<PropagationHistoryPoint[]>([]);
@@ -191,6 +234,8 @@ const PropagationHistoryPanel = () => {
     const [error, setError] = React.useState<string | null>(null);
     const [infoMessage, setInfoMessage] = React.useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null);
+    const [chartMode, setChartMode] = React.useState<ChartMode>('probability');
+    const [ssnInfo, setSsnInfo] = React.useState<SsnInfo>({ value: null, source: null });
 
     const ctxRef = React.useRef(contextData);
     React.useEffect(() => {
@@ -200,17 +245,19 @@ const PropagationHistoryPanel = () => {
     const spotId = contextData.spotId;
     React.useEffect(() => {
         setInfoMessage(null);
+        setChartMode('probability');
         if (!spotId) {
             setHistory([]);
             setError(null);
             setLastUpdated(null);
             lastSuccessfulSpotId.current = null;
+            setSsnInfo({ value: null, source: null });
             return;
         }
-        // When the user selects a new spot, clear stale history until fresh data arrives.
         setHistory([]);
         setError(null);
         lastSuccessfulSpotId.current = null;
+        setSsnInfo({ value: null, source: null });
     }, [spotId]);
     const lastSuccessfulSpotId = React.useRef<number | null>(null);
 
@@ -220,6 +267,7 @@ const PropagationHistoryPanel = () => {
             setError(null);
             setInfoMessage(null);
             setLastUpdated(null);
+            setSsnInfo({ value: null, source: null });
             return;
         }
 
@@ -231,7 +279,13 @@ const PropagationHistoryPanel = () => {
 
         window.pywebview.api.get_propagation_history(spotId)
             .then((response: string) => {
-                let payload: { success: boolean; message?: string; history?: PropagationHistoryPoint[] };
+                let payload: {
+                    success: boolean;
+                    message?: string;
+                    history?: PropagationHistoryPoint[];
+                    ssn?: number;
+                    ssn_source?: string;
+                };
                 try {
                     payload = JSON.parse(response);
                 } catch {
@@ -239,8 +293,17 @@ const PropagationHistoryPanel = () => {
                     setHistory([]);
                     setLastUpdated(null);
                     lastSuccessfulSpotId.current = null;
+                    setSsnInfo({ value: null, source: null });
                     return;
                 }
+
+                const ssnValue = typeof payload.ssn === 'number' ? payload.ssn : null;
+                const ssnSource = payload.ssn_source === 'observed'
+                    ? 'observed'
+                    : payload.ssn_source === 'fallback'
+                        ? 'fallback'
+                        : null;
+                setSsnInfo({ value: ssnValue, source: ssnSource });
 
                 if (!payload.success) {
                     if (payload.message === 'spot not found') {
@@ -282,6 +345,7 @@ const PropagationHistoryPanel = () => {
                 setHistory([]);
                 setLastUpdated(null);
                 lastSuccessfulSpotId.current = null;
+                setSsnInfo({ value: null, source: null });
             })
             .finally(() => setLoading(false));
     }, [spotId]);
@@ -295,7 +359,12 @@ const PropagationHistoryPanel = () => {
     const latestPoint = history.length ? history[history.length - 1] : null;
     const bestPoint = history.reduce<PropagationHistoryPoint | null>(
         (best, current) => {
-            if (!best || current.snr > best.snr) {
+            const currentProb = typeof current.probability === 'number' ? current.probability : null;
+            const bestProb = best && typeof best.probability === 'number' ? best.probability : null;
+            if (currentProb === null) {
+                return best;
+            }
+            if (bestProb === null || currentProb > bestProb) {
                 return current;
             }
             return best;
@@ -303,25 +372,52 @@ const PropagationHistoryPanel = () => {
         null
     );
 
+    const toPercent = (value: number | null | undefined) => {
+        if (typeof value !== 'number' || Number.isNaN(value)) {
+            return null;
+        }
+        return Math.round(Math.max(0, Math.min(value * 100, 100)));
+    };
+
+    const latestProbability = toPercent(latestPoint?.probability ?? null);
+    const bestProbability = toPercent(bestPoint?.probability ?? null);
+    const lastTimestamp = latestPoint ? formatTimeLabel(latestPoint.timestamp) : '--';
+
     const subtitle = contextData.qso
         ? `${contextData.qso.call} @ ${contextData.qso.sig_info || contextData.qso.reference || ''}`
         : 'Select a spot to view propagation estimates.';
 
-    const latestLabel = latestPoint
-        ? `${latestPoint.snr >= 0 ? '+' : ''}${latestPoint.snr.toFixed(1)} dB (${classifyCapability(latestPoint.snr)})`
-        : 'No recent prediction';
+    const latestLabel = latestProbability !== null ? `${latestProbability}%` : 'No probability data';
+    const bestLabel = bestProbability !== null ? `${bestProbability}%` : 'No probability data';
+    const updatedLabel = lastUpdated
+        ? lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : '--';
 
-    const lastTimestamp = latestPoint ? formatTimeLabel(latestPoint.timestamp) : '—';
-    const bestLabel = bestPoint
-        ? `${bestPoint.snr >= 0 ? '+' : ''}${bestPoint.snr.toFixed(1)} dB`
-        : '—';
+    const ssnDisplay = spotId && ssnInfo.value !== null ? Math.round(ssnInfo.value) : null;
+    const ssnTitle = ssnInfo.source === 'observed'
+        ? 'Observed NOAA SSN'
+        : ssnInfo.source === 'fallback'
+            ? 'Fallback SSN (config)'
+            : '';
+
+    const nextMode = chartMode === 'probability' ? 'SNR' : 'probability';
+    const toggleChartMode = () => {
+        setChartMode((prev) => (prev === 'probability' ? 'snr' : 'probability'));
+    };
 
     return (
         <div className='propagation-history-panel'>
             <div className='propagation-history-panel__header'>
                 <div>
                     <div className='propagation-history-panel__title'>Propagation History</div>
-                    <div className='propagation-history-panel__subtitle'>{subtitle}</div>
+                    <div className='propagation-history-panel__subtitle'>
+                        <span>{subtitle}</span>
+                        {spotId && ssnDisplay !== null && (
+                            <Tooltip title={ssnTitle}>
+                                <span className='propagation-history-panel__ssn'>SSN: {ssnDisplay}</span>
+                            </Tooltip>
+                        )}
+                    </div>
                 </div>
                 <Tooltip title={spotId ? 'Refresh propagation data' : 'Select a spot to enable'}>
                     <span>
@@ -352,16 +448,32 @@ const PropagationHistoryPanel = () => {
 
             {spotId && !error && (
                 <>
-                    <PropagationHistoryChart data={history} />
+                    <div className='propagation-history-panel__chartSection'>
+                        <PropagationHistoryChart data={history} mode={chartMode} />
+                        <div className='propagation-history-panel__chartToggle'>
+                            <Tooltip title={`Show ${nextMode.toUpperCase()} chart`}>
+                                <span>
+                                    <IconButton
+                                        size='small'
+                                        onClick={toggleChartMode}
+                                        aria-label={`Show ${nextMode} chart`}
+                                    >
+                                        <KeyboardArrowRightIcon fontSize='small' />
+                                    </IconButton>
+                                </span>
+                            </Tooltip>
+                        </div>
+                    </div>
                     <div className='propagation-history-panel__stats'>
-                        <span><strong>Latest:</strong> {latestLabel} @ {lastTimestamp}</span>
-                        <span><strong>Best:</strong> {bestLabel}</span>
-                        <span><strong>Samples:</strong> {history.length}</span>
                         <span>
-                            <strong>Updated:</strong>{' '}
-                            {lastUpdated
-                                ? lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                                : '—'}
+                            <strong>Latest:</strong> {latestLabel}
+                            {latestProbability !== null && lastTimestamp !== '--' ? ` @ ${lastTimestamp}` : ''}
+                        </span>
+                        <span><strong>Best:</strong> {bestLabel}</span>
+                        <span className='propagation-history-panel__stats-samples'>
+                            <strong>Samples:</strong> {history.length}
+                            <span className='propagation-history-panel__stats-divider'>-</span>
+                            <strong>Updated:</strong> {updatedLabel}
                         </span>
                     </div>
                 </>

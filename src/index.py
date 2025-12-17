@@ -119,9 +119,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     entry = get_entrypoint()
-
-    print(f"!!!!!entrypoint: {entry}")
-    
+   
     (width, height) = the_api._get_win_size()
     (x, y) = the_api._get_win_pos()
     maxi = the_api._get_win_maximized()

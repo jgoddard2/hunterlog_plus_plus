@@ -28,9 +28,14 @@ export interface SpotRow {
     act_cmts: string,
     cw_wpm: number,
     spot_source: string
+    propagation_snr?: number,
+    propagation_status?: string,
+    propagation_probability?: number,
+    propagation_support?: number,
 };
 
 export interface PropagationHistoryPoint {
     timestamp: string,
-    snr: number
+    snr?: number,
+    probability?: number
 }

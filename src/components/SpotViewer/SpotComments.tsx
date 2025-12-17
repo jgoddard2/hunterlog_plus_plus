@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Box, Button, CircularProgress, FormControlLabel, Modal, Switch } from '@mui/material';
-import { ClickAwayListener } from '@mui/base/ClickAwayListener';
+import ClickAwayListener from '@mui/material/ClickAwayListener';
 import { styled, css } from '@mui/system';
 import { SpotComments } from '../../@types/SpotComments';
 

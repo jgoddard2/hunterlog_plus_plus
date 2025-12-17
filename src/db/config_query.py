@@ -207,8 +207,17 @@ class ConfigQuery:
             'editable': 'True'
         },
         {
+            'key': 'prop_default_ssn',
+            'val': '61',
+            'type': 'float',
+            'description': 'Fallback SSN when NOAA data is unavailable',
+            'group': 'propagation',
+            'enabled': 'True',
+            'editable': 'True'
+        },
+        {
             'key': 'prop_ssb_threshold',
-            'val': '10',
+            'val': '6',
             'type': 'int',
             'description': 'SNR threshold for SSB mode (dB)',
             'group': 'propagation',

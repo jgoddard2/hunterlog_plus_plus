@@ -17,6 +17,7 @@ export interface UserConfig {
     scan_wait_time: number,
     prop_enabled: boolean,
     prop_refresh_minutes: number,
+    prop_default_ssn: number,
     prop_ssb_threshold: number,
     prop_digital_threshold: number,
     prop_distance_scale_km: number,

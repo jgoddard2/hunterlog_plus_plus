@@ -124,7 +124,8 @@ export default function ConfigModal() {
             config.prop_enabled = !(propEnabledRaw.toString().toLowerCase() === 'false');
         }
         config.prop_refresh_minutes = Number(getVar(cfg2, "prop_refresh_minutes")) || 3;
-        config.prop_ssb_threshold = Number(getVar(cfg2, "prop_ssb_threshold")) || 10;
+        config.prop_default_ssn = Number(getVar(cfg2, "prop_default_ssn")) || 61;
+        config.prop_ssb_threshold = Number(getVar(cfg2, "prop_ssb_threshold")) || 6;
         config.prop_digital_threshold = Number(getVar(cfg2, "prop_digital_threshold")) || -15;
         config.prop_history_minutes = Number(getVar(cfg2, "prop_history_minutes")) || 30;
 
@@ -150,6 +151,7 @@ export default function ConfigModal() {
         // Save propagation config
         setVar(config2, "prop_enabled", config.prop_enabled ? 'True' : 'False');
         setVar(config2, "prop_refresh_minutes", config.prop_refresh_minutes.toString());
+        setVar(config2, "prop_default_ssn", config.prop_default_ssn.toString());
         setVar(config2, "prop_ssb_threshold", config.prop_ssb_threshold.toString());
         setVar(config2, "prop_digital_threshold", config.prop_digital_threshold.toString());
         setVar(config2, "prop_history_minutes", config.prop_history_minutes.toString());

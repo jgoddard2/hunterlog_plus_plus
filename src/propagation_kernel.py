@@ -16,9 +16,23 @@ Based on the approach described in earlier kernel smoothing experiments.
 
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+import datetime as dt
 import math
 import logging as L
+
+import numpy as np
+
+from propagation_utils import grid_to_latlon
+
+try:
+    from dvoacap.path_geometry import GeoPoint
+    from dvoacap.prediction_engine import PredictionEngine
+except ImportError:  # pragma: no cover - environment specific
+    GeoPoint = None
+    PredictionEngine = None
+    # Delay import error until the first VOACAP call so the UI can surface
+    # a helpful error message instead of failing at module import time.
 
 logging = L.getLogger(__name__)
 
@@ -36,6 +50,44 @@ T0_DEG = 60.0
 
 # Minimum weight threshold - reports with weight below this are ignored
 MIN_WEIGHT = 0.01
+
+# Endpoint-aware kernel defaults
+PSKREPORTER_REFERENCE_BW_HZ = 2500.0
+KERNEL_EA_TX_RADIUS_KM = 200.0
+KERNEL_EA_RX_RADIUS_KM = 200.0
+KERNEL_EA_MIN_WEIGHT = 1e-4
+KERNEL_EA_TOP_K = 300
+KERNEL_EA_GAMMA = 2.0
+KERNEL_EA_MIN_N_EFF = 5.0
+DEFAULT_WSPR_TX_POWER_DBM = 33.0  # ~2W when TX power is missing
+
+# VOACAP defaults
+MIN_TAKEOFF_DEG = 3.0
+RESIDENTIAL_NOISE_DB = 145.0
+REQUIRED_SNR_DBHZ = 13.0
+REQUIRED_RELIABILITY = 0.9
+DEFAULT_SSN = 61.0
+K0_DEFAULT = 20.0
+K0_UNREACHABLE = 80.0
+
+MODE_THRESHOLDS_DB = {
+    'ssb': 6.0,
+    'digital': -15.0,
+}
+
+BAND_CENTER_FREQ_MHZ = {
+    "160m": 1.85,
+    "80m": 3.57,
+    "60m": 5.357,
+    "40m": 7.074,
+    "30m": 10.136,
+    "20m": 14.074,
+    "17m": 18.1,
+    "15m": 21.074,
+    "12m": 24.915,
+    "10m": 28.074,
+    "6m": 50.313,
+}
 
 
 # ==============================
@@ -74,6 +126,33 @@ class SpotPath:
     distance_km: float
     azimuth_deg: float
     band: str
+    mode: Optional[str] = None
+    frequency_mhz: Optional[float] = None
+    target_lat: Optional[float] = None
+    target_lon: Optional[float] = None
+
+
+@dataclass
+class EndpointKernelArrays:
+    """Vectorised representation of WSPR reports for endpoint-aware smoothing."""
+    tx_lat: np.ndarray
+    tx_lon: np.ndarray
+    rx_lat: np.ndarray
+    rx_lon: np.ndarray
+    snr_db: np.ndarray
+    tx_power_dbm: np.ndarray
+    channel_score: np.ndarray
+
+
+@dataclass
+class PropagationEstimate:
+    """Combined Kernel EA + VOACAP prediction for a spot."""
+    snr: Optional[float]
+    probability: Optional[float]
+    support: Optional[float]
+    kernel_probability: Optional[float] = None
+    voacap_probability: Optional[float] = None
+    voacap_snr: Optional[float] = None
 
 
 # ==============================
@@ -103,6 +182,19 @@ def calculate_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> flo
     
     brng = math.degrees(math.atan2(y, x))
     return (brng + 360.0) % 360.0
+
+
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance between two latitude/longitude points in km."""
+    r = 6371.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlmb = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dphi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(dlmb / 2) ** 2
+    )
+    return 2 * r * math.asin(math.sqrt(a))
 
 
 # ==============================
@@ -227,7 +319,7 @@ def batch_predict_snr(spot_paths: List[SpotPath],
 # ==============================
 
 def classify_snr(snr: Optional[float],
-                ssb_threshold: float = 10.0,
+                ssb_threshold: float = 6.0,
                 digital_threshold: float = -15.0) -> str:
     """
     Classify SNR into capability categories.
@@ -249,3 +341,325 @@ def classify_snr(snr: Optional[float],
         return 'digital'
     else:
         return 'not_reachable'
+
+
+# ==============================
+# Endpoint-aware Kernel + VOACAP helpers
+# ==============================
+
+
+def watts_to_dbm(power_watts: float) -> float:
+    if power_watts <= 0:
+        return 0.0
+    return 10.0 * math.log10(power_watts) + 30.0
+
+
+def dbm_to_watts(dbm: float) -> float:
+    return 10 ** ((dbm - 30.0) / 10.0)
+
+
+def snr_threshold_to_voacap_required_snr_dbhz(threshold_db: float,
+                                              reference_bw_hz: float = PSKREPORTER_REFERENCE_BW_HZ) -> float:
+    return threshold_db + 10.0 * math.log10(max(1.0, reference_bw_hz))
+
+
+def clamp_probability(p: float, eps: float = 1e-4) -> float:
+    return max(eps, min(1.0 - eps, float(p)))
+
+
+def shrink_with_voacap_prior(p_kernel: float,
+                             n_eff: float,
+                             p_voacap: Optional[float],
+                             k0: float = K0_DEFAULT) -> float:
+    if p_voacap is None:
+        return clamp_probability(p_kernel)
+    p_kernel = clamp_probability(p_kernel)
+    p_voacap = clamp_probability(p_voacap)
+    n_eff = max(0.0, float(n_eff))
+    return (p_kernel * n_eff + p_voacap * k0) / (n_eff + k0)
+
+
+def shrink_snr_with_voacap_prior(snr_kernel: Optional[float],
+                                 n_eff: float,
+                                 snr_voacap: Optional[float],
+                                 k0: float = K0_DEFAULT) -> Optional[float]:
+    if snr_kernel is None and snr_voacap is None:
+        return None
+    if snr_kernel is None:
+        return snr_voacap
+    if snr_voacap is None:
+        return snr_kernel
+    n_eff = max(0.0, float(n_eff))
+    w = n_eff / (n_eff + max(k0, 1e-6))
+    return w * float(snr_kernel) + (1.0 - w) * float(snr_voacap)
+
+
+SSB_MODE_PREFIXES = ('SSB', 'USB', 'LSB', 'AM', 'FM', 'PHONE', 'PH', 'VOICE')
+
+
+def categorize_operation_mode(mode: Optional[str]) -> str:
+    if not mode:
+        return 'digital'
+    text = mode.strip().upper()
+    if any(text.startswith(prefix) for prefix in SSB_MODE_PREFIXES):
+        return 'ssb'
+    return 'digital'
+
+
+def _resolve_frequency_mhz(freq_hint: Optional[float], band: str) -> float:
+    if freq_hint and freq_hint > 0:
+        return freq_hint
+    return BAND_CENTER_FREQ_MHZ.get(band.lower(), 14.074)
+
+
+def build_endpoint_kernel_arrays(reports: List[PropagationReport]) -> Optional[EndpointKernelArrays]:
+    if not reports:
+        return None
+    tx_lat = np.array([float(r.tx_lat) for r in reports], dtype=float)
+    tx_lon = np.array([float(r.tx_lon) for r in reports], dtype=float)
+    rx_lat = np.array([float(r.rx_lat) for r in reports], dtype=float)
+    rx_lon = np.array([float(r.rx_lon) for r in reports], dtype=float)
+    snr_db = np.array([float(r.snr_db) for r in reports], dtype=float)
+    tx_power = np.array([
+        float(r.tx_power_dbm) if r.tx_power_dbm is not None else DEFAULT_WSPR_TX_POWER_DBM
+        for r in reports
+    ], dtype=float)
+    channel_score = snr_db - tx_power
+    return EndpointKernelArrays(
+        tx_lat=tx_lat,
+        tx_lon=tx_lon,
+        rx_lat=rx_lat,
+        rx_lon=rx_lon,
+        snr_db=snr_db,
+        tx_power_dbm=tx_power,
+        channel_score=channel_score,
+    )
+
+
+def predict_endpoint_kernel(dataset: EndpointKernelArrays,
+                            user_lat: float,
+                            user_lon: float,
+                            target_lat: float,
+                            target_lon: float,
+                            user_power_dbm: float,
+                            *,
+                            r_tx_km: float = KERNEL_EA_TX_RADIUS_KM,
+                            r_rx_km: float = KERNEL_EA_RX_RADIUS_KM,
+                            min_weight: float = KERNEL_EA_MIN_WEIGHT,
+                            top_k: Optional[int] = KERNEL_EA_TOP_K,
+                            sharpen_gamma: float = KERNEL_EA_GAMMA,
+                            threshold_db: float = MODE_THRESHOLDS_DB['ssb'],
+                            ) -> Tuple[Optional[float], Optional[float], Dict[str, float]]:
+    if dataset.tx_lat.size == 0:
+        return None, None, {"sum_w": 0.0, "n_eff": 0.0, "used_points": 0}
+
+    d_tx = np.array([
+        haversine_km(lat, lon, user_lat, user_lon)
+        for lat, lon in zip(dataset.tx_lat, dataset.tx_lon)
+    ], dtype=float)
+    d_rx = np.array([
+        haversine_km(lat, lon, target_lat, target_lon)
+        for lat, lon in zip(dataset.rx_lat, dataset.rx_lon)
+    ], dtype=float)
+
+    weights = np.exp(-((d_tx / max(1.0, r_tx_km)) ** 2))
+    weights *= np.exp(-((d_rx / max(1.0, r_rx_km)) ** 2))
+
+    if sharpen_gamma and sharpen_gamma != 1.0:
+        weights = weights ** sharpen_gamma
+
+    if top_k is not None and weights.size > top_k:
+        idx = np.argpartition(weights, -top_k)[-top_k:]
+        weights = weights[idx]
+        d_tx = d_tx[idx]
+        d_rx = d_rx[idx]
+        channel_score = dataset.channel_score[idx]
+    else:
+        channel_score = dataset.channel_score
+
+    mask = (weights >= min_weight) & np.isfinite(channel_score)
+    if not np.any(mask):
+        return None, None, {"sum_w": 0.0, "n_eff": 0.0, "used_points": 0}
+
+    w = weights[mask]
+    c_use = channel_score[mask]
+    sum_w = float(np.sum(w))
+    sum_w2 = float(np.sum(w * w))
+    if sum_w <= 0.0:
+        return None, None, {"sum_w": 0.0, "n_eff": 0.0, "used_points": 0}
+    n_eff = (sum_w * sum_w / sum_w2) if sum_w2 > 0 else 0.0
+
+    c_hat = float(np.sum(w * c_use) / sum_w)
+    snr_hat = c_hat + user_power_dbm
+    p_mode = float(np.sum(w * (c_use + user_power_dbm >= threshold_db)) / sum_w)
+    support = {"sum_w": sum_w, "n_eff": n_eff, "used_points": int(mask.sum())}
+
+    return snr_hat, clamp_probability(p_mode), support
+
+
+def predict_voacap_for_path(hunter_grid: str,
+                            target_grid: str,
+                            freq_mhz: float,
+                            ssn: float,
+                            tx_power_watts: float,
+                            reference_bw_hz: float,
+                            snr_threshold_dbhz: float) -> Tuple[Optional[float], Optional[float]]:
+    if PredictionEngine is None or GeoPoint is None:
+        raise RuntimeError("dvoacap is not installed; please add it to requirements.")
+    if not hunter_grid or not target_grid:
+        return None, None
+    try:
+        hunter_lat, hunter_lon = grid_to_latlon(hunter_grid)
+        target_lat, target_lon = grid_to_latlon(target_grid)
+    except Exception as exc:
+        logging.debug("[VOACAP] Unable to convert grids %s/%s: %s", hunter_grid, target_grid, exc)
+        return None, None
+
+    now = dt.datetime.utcnow().replace(tzinfo=dt.timezone.utc)
+    seconds = now.hour * 3600 + now.minute * 60 + now.second + now.microsecond / 1_000_000.0
+    utc_fraction = seconds / 86400.0
+
+    engine = PredictionEngine()
+    params = engine.params
+    params.ssn = float(ssn)
+    params.month = now.month
+    params.tx_power = float(tx_power_watts) if tx_power_watts > 0 else 1.0
+    params.tx_location = GeoPoint.from_degrees(hunter_lat, hunter_lon)
+    params.min_angle = math.radians(MIN_TAKEOFF_DEG)
+    params.man_made_noise_at_3mhz = RESIDENTIAL_NOISE_DB
+    params.required_snr = REQUIRED_SNR_DBHZ
+    params.required_reliability = REQUIRED_RELIABILITY
+
+    rx_point = GeoPoint.from_degrees(target_lat, target_lon)
+    engine.predict(rx_location=rx_point, utc_time=utc_fraction, frequencies=[float(freq_mhz)])
+
+    if not engine.predictions:
+        return None, None
+
+    pred = engine.predictions[0]
+    snr_db = float(pred.signal.snr_db)
+    path = getattr(engine, "path", None)
+    if path is not None and getattr(path, "dist", 0) >= PredictionEngine.RAD_7000_KM:
+        best_mode = getattr(engine, "_best_mode", None)
+        if best_mode and getattr(best_mode, "signal", None):
+            snr_db = float(best_mode.signal.snr_db)
+
+    snr_db -= 10.0 * math.log10(max(reference_bw_hz, 1.0))
+
+    probability = None
+    try:
+        params.required_snr = float(snr_threshold_dbhz)
+        probability = float(engine._calc_service_prob())
+    except Exception as exc:
+        logging.debug("[VOACAP] Unable to calculate service probability: %s", exc)
+
+    return snr_db, probability
+
+
+def batch_predict_kernel_ea(
+    spot_paths: List[SpotPath],
+    reports_by_band: Dict[str, List[PropagationReport]],
+    *,
+    hunter_grid: str,
+    user_lat: float,
+    user_lon: float,
+    user_power_dbm: float,
+    user_power_watts: float,
+    ssn: float = DEFAULT_SSN,
+    reference_bw_hz: float = PSKREPORTER_REFERENCE_BW_HZ,
+    mode_thresholds: Dict[str, float] = MODE_THRESHOLDS_DB,
+    min_support: float = KERNEL_EA_MIN_N_EFF,
+) -> Dict[int, PropagationEstimate]:
+    predictions: Dict[int, PropagationEstimate] = {}
+    if not spot_paths:
+        return predictions
+
+    dataset_cache: Dict[str, Optional[EndpointKernelArrays]] = {}
+    for band, reports in reports_by_band.items():
+        dataset_cache[band.lower()] = build_endpoint_kernel_arrays(reports)
+
+    for spot in spot_paths:
+        band_key = (spot.band or "").lower()
+        dataset = dataset_cache.get(band_key)
+        if not dataset:
+            predictions[spot.spot_id] = PropagationEstimate(None, None, None)
+            continue
+        if spot.target_lat is None or spot.target_lon is None:
+            predictions[spot.spot_id] = PropagationEstimate(None, None, None)
+            continue
+        if not spot.activator_grid:
+            predictions[spot.spot_id] = PropagationEstimate(None, None, None)
+            continue
+
+        freq_mhz = _resolve_frequency_mhz(spot.frequency_mhz, band_key)
+        mode_category = categorize_operation_mode(spot.mode)
+        threshold_db = mode_thresholds.get(mode_category, MODE_THRESHOLDS_DB['digital'])
+        threshold_dbhz = snr_threshold_to_voacap_required_snr_dbhz(threshold_db, reference_bw_hz)
+
+        kernel_snr = None
+        kernel_prob = None
+        support = {"n_eff": 0.0, "used_points": 0}
+        try:
+            kernel_snr, kernel_prob, support = predict_endpoint_kernel(
+                dataset,
+                user_lat=user_lat,
+                user_lon=user_lon,
+                target_lat=spot.target_lat,
+                target_lon=spot.target_lon,
+                user_power_dbm=user_power_dbm,
+                r_tx_km=KERNEL_EA_TX_RADIUS_KM,
+                r_rx_km=KERNEL_EA_RX_RADIUS_KM,
+                min_weight=KERNEL_EA_MIN_WEIGHT,
+                top_k=KERNEL_EA_TOP_K,
+                sharpen_gamma=KERNEL_EA_GAMMA,
+                threshold_db=threshold_db,
+            )
+        except Exception as exc:
+            logging.debug("[KERNEL EA] Error predicting SNR for spot %s: %s", spot.spot_id, exc)
+
+        voacap_snr = None
+        voacap_prob = None
+        try:
+            voacap_snr, voacap_prob = predict_voacap_for_path(
+                hunter_grid=hunter_grid,
+                target_grid=spot.activator_grid,
+                freq_mhz=freq_mhz,
+                ssn=ssn,
+                tx_power_watts=user_power_watts,
+                reference_bw_hz=reference_bw_hz,
+                snr_threshold_dbhz=threshold_dbhz,
+            )
+        except Exception as exc:
+            logging.debug("[VOACAP] Prediction failure for spot %s: %s", spot.spot_id, exc)
+
+        n_eff = float(support.get('n_eff') or 0.0)
+        voacap_unreachable = voacap_snr is not None and voacap_snr < MODE_THRESHOLDS_DB['digital']
+
+        probability: Optional[float] = None
+        if kernel_prob is not None and math.isfinite(kernel_prob) and n_eff >= min_support:
+            k0_prob = K0_UNREACHABLE if voacap_unreachable else K0_DEFAULT
+            probability = shrink_with_voacap_prior(kernel_prob, n_eff, voacap_prob, k0_prob)
+        elif voacap_prob is not None:
+            probability = clamp_probability(voacap_prob)
+        elif kernel_prob is not None:
+            probability = clamp_probability(kernel_prob)
+
+        snr_final: Optional[float]
+        if n_eff < min_support and voacap_snr is not None:
+            snr_final = voacap_snr
+        else:
+            k0_snr = K0_UNREACHABLE if voacap_unreachable else K0_DEFAULT
+            snr_final = shrink_snr_with_voacap_prior(kernel_snr, n_eff, voacap_snr, k0_snr)
+
+        support_value = n_eff if n_eff > 0 else None
+
+        predictions[spot.spot_id] = PropagationEstimate(
+            snr=snr_final,
+            probability=probability,
+            support=support_value,
+            kernel_probability=kernel_prob,
+            voacap_probability=voacap_prob,
+            voacap_snr=voacap_snr,
+        )
+
+    return predictions

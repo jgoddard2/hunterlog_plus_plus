@@ -24,6 +24,13 @@ export default function PropagationEstimationTab() {
         }
     };
 
+    const handleDefaultSsnChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const val = parseFloat(event.target.value);
+        if (!isNaN(val) && val > 0) {
+            setConfig({ ...config, prop_default_ssn: val });
+        }
+    };
+
     const handleSsbThresholdChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const val = parseInt(event.target.value);
         if (!isNaN(val)) {
@@ -77,7 +84,7 @@ export default function PropagationEstimationTab() {
             <Typography variant="h6">Propagation Estimation </Typography>
 
             <Typography variant="body2" color="text.secondary">
-                Real-time propagation estimation based on digital-mode reception reports. Tune the refresh interval and smoothing to match your operating style.
+                Mad! Real-time propagation estimation based on digital-mode reception reports. Tune the refresh interval and smoothing to match your operating style.
             </Typography>
 
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -101,6 +108,17 @@ export default function PropagationEstimationTab() {
                                 onChange={handleRefreshMinutesChange}
                                 helperText="How often to fetch data (1-60 min)"
                                 inputProps={{ min: 1, max: 60 }}
+                                disabled={!isPropEnabled}
+                                size="small"
+                            />
+
+                            <TextField
+                                label="Fallback SSN"
+                                type="number"
+                                value={config.prop_default_ssn ?? 61}
+                                onChange={handleDefaultSsnChange}
+                                helperText="Used when NOAA SSN cannot be retrieved"
+                                inputProps={{ min: 1, step: 1 }}
                                 disabled={!isPropEnabled}
                                 size="small"
                             />
@@ -131,7 +149,7 @@ export default function PropagationEstimationTab() {
                                 <TextField
                                     label="SSB (dB)"
                                     type="number"
-                                    value={config.prop_ssb_threshold || 10}
+                                    value={config.prop_ssb_threshold || 6}
                                     onChange={handleSsbThresholdChange}
                                     helperText="Min SNR for voice"
                                     disabled={!isPropEnabled}
@@ -155,16 +173,16 @@ export default function PropagationEstimationTab() {
                                 <Typography variant="subtitle2" gutterBottom>Color Legend</Typography>
                                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.3 }}>
                                     <Typography variant="body2">
-                                        <span style={{ color: 'green', fontWeight: 'bold' }}>Green</span> - SSB (SNR ≥ {config.prop_ssb_threshold || 10}dB)
+                                        <span style={{ color: 'green', fontWeight: 'bold' }}>Green</span> - Prob&nbsp;A &gt; 75% (high confidence)
                                     </Typography>
                                     <Typography variant="body2">
-                                        <span style={{ color: 'orange', fontWeight: 'bold' }}>Orange</span> - Digital (SNR ≥ {config.prop_digital_threshold || -15}dB)
+                                        <span style={{ color: '#f9a825', fontWeight: 'bold' }}>Yellow</span> - Prob&nbsp;A between 25% and 75%
                                     </Typography>
                                     <Typography variant="body2">
-                                        <span style={{ color: 'red', fontWeight: 'bold' }}>Red</span> - N/R (below digital threshold)
+                                        <span style={{ color: 'red', fontWeight: 'bold' }}>Red</span> - Prob&nbsp;A &lt; 25%
                                     </Typography>
                                     <Typography variant="body2">
-                                        <span style={{ color: 'black', fontWeight: 'bold' }}>Black</span> - No data
+                                        <span style={{ color: '#757575', fontWeight: 'bold' }}>Grey</span> - No recent data
                                     </Typography>
                                 </Box>
                             </Box>

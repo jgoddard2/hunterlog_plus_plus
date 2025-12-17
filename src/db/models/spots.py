@@ -57,6 +57,8 @@ class Spot(Base):
     propagation_snr = sa.Column(sa.Float, nullable=True)
     propagation_status = sa.Column(sa.String(20), nullable=True)  # 'ssb', 'digital', 'not_reachable', 'no_data'
     propagation_updated = sa.Column(sa.DateTime, nullable=True)
+    propagation_probability = sa.Column(sa.Float, nullable=True)
+    propagation_support = sa.Column(sa.Float, nullable=True)
 
 
     def __repr__(self):

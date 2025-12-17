@@ -120,38 +120,41 @@ const columns: GridColDef[] = [
     {
         field: 'propagation',
         headerName: 'Prop',
-        width: 90,
+        width: 220,
         type: 'number',
         headerAlign: 'left',
         align: 'left',
         valueGetter: (params: GridValueGetterParams) => {
-            // Return numeric SNR value for sorting (-999 for no data)
-            const snr = params.row.propagation_snr;
-            return (snr !== undefined && snr !== null) ? snr : -999;
+            const prob = params.row.propagation_probability;
+            return (prob !== undefined && prob !== null) ? prob : -1;
         },
         renderCell: (params: GridCellParams) => {
-            const snr = params.row.propagation_snr;
-            const status = params.row.propagation_status;
+            const probability = params.row.propagation_probability as number | undefined;
+            const snr = params.row.propagation_snr as number | undefined;
+            const support = params.row.propagation_support as number | undefined;
+            const mode = params.row.mode as string | undefined;
 
-            // Determine color and label based on status
-            let color = 'black';
-            let label = 'No Reports';
+            const probabilityPct = (probability !== undefined && probability !== null)
+                ? probability * 100
+                : null;
 
-            if (status === 'no_data' || status === undefined || status === null) {
-                color = 'black';
-                label = 'No Reports';
-            } else if (status === 'ssb') {
-                color = 'green';
-                label = `SSB: ${snr >= 0 ? '+' : ''}${snr?.toFixed(0)}dB`;
-            } else if (status === 'digital') {
-                color = 'orange';
-                label = `Digital: ${snr >= 0 ? '+' : ''}${snr?.toFixed(0)}dB`;
-            } else if (status === 'not_reachable') {
-                color = 'red';
-                label = `N/R: ${snr >= 0 ? '+' : ''}${snr?.toFixed(0)}dB`;
+            let color = '#757575';
+            if (probabilityPct !== null) {
+                if (probabilityPct > 75) {
+                    color = 'green';
+                } else if (probabilityPct > 25) {
+                    color = '#f9a825';
+                } else {
+                    color = 'red';
+                }
             }
 
-            return <span style={{ color, fontWeight: 'bold', fontSize: '0.85rem' }}>{label}</span>;
+            const mm = probabilityPct !== null ? `${probabilityPct.toFixed(0)}%` : '--';
+            const nn = (snr !== undefined && snr !== null) ? `${snr >= 0 ? '+' : ''}${snr.toFixed(1)}dB` : '--';
+            const pp = (support !== undefined && support !== null) ? support.toFixed(1) : '--';
+            const modeLabel = mode ? `${mode.toUpperCase()} ` : '';
+
+            return <span style={{ color, fontWeight: 'bold', fontSize: '0.85rem' }}>{`${modeLabel}${mm} | SNR: ${nn} | ${pp}`}</span>;
         }
     },
     {
