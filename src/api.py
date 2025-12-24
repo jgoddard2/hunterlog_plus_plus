@@ -14,12 +14,20 @@ from propagation_kernel import (
     DEFAULT_TX_ANTENNA_PROFILE_ID,
     DEFAULT_RX_ANTENNA_PROFILE_ID,
     KERNEL_EA_MIN_N_EFF,
+    KERNEL_EA_MIN_WEIGHT,
+    KERNEL_EA_TOP_K,
+    KERNEL_EA_GAMMA,
+    KERNEL_EA_TX_RADIUS_KM,
+    KERNEL_EA_RX_RADIUS_KM,
     MODE_THRESHOLDS_DB,
     PSKREPORTER_REFERENCE_BW_HZ,
     PropagationEstimate,
     PropagationReport,
     SpotPath,
+    build_endpoint_kernel_arrays,
     batch_predict_kernel_ea,
+    categorize_operation_mode,
+    predict_endpoint_kernel,
     resolve_kernel_profile,
     resolve_voacap_antenna_profile,
     watts_to_dbm,
@@ -63,6 +71,9 @@ PROPAGATION_CONFIG_KEYS = [
     'my_grid6',
 ]
 
+PROPAGATION_MAP_GRID_STEP_DEG = 10.0
+PROPAGATION_MAP_CACHE_LIMIT = 6
+
 
 class JsApi:
     def __init__(self):
@@ -87,6 +98,7 @@ class JsApi:
         self.prop_model_cache: dict[str, tuple[datetime.datetime, int, list]] = {}
         self.propagation_snapshot: dict[str, dict[str, dict[str, object]]] = {}
         self.propagation_history: dict[str, list[dict[str, object]]] = {}
+        self.propagation_map_cache: dict[str, list[tuple[datetime.datetime, dict[str, object]]]] = {}
         self.current_ssn_value: Optional[float] = None
         self.current_ssn_source: str = 'fallback'
         self.current_ssn_updated: Optional[datetime.datetime] = None
@@ -166,6 +178,7 @@ class JsApi:
             self.prop_model_cache.clear()
             self.propagation_snapshot.clear()
             self.propagation_history.clear()
+            self.propagation_map_cache.clear()
             logging.info("[PROP CFG] Cleared cached propagation datasets due to config change")
             return True
         finally:
@@ -238,6 +251,116 @@ class JsApi:
         if self.current_ssn_updated:
             payload['ssn_updated'] = self.current_ssn_updated.isoformat() + 'Z'
         return payload
+
+    def _get_propagation_reports_for_band(self, my_grid: str, band_name: str, fetch_minutes: int) -> list[PropagationReport]:
+        cache_key = band_name.lower()
+        now = datetime.datetime.utcnow()
+        refresh_minutes = self.db.config.get_value('prop_refresh_minutes') or 3
+        cached_entry = self.prop_model_cache.get(cache_key)
+        if cached_entry:
+            cached_time, cached_window, cached_reports = cached_entry
+            age_minutes = (now - cached_time).total_seconds() / 60.0
+            if age_minutes < refresh_minutes and cached_window >= fetch_minutes:
+                logging.info("[PROP MAP] Using cached propagation dataset for %s", band_name)
+                return cached_reports
+
+        reports = self.prop_fetcher.fetch_reception_reports(
+            rx_grid=my_grid,
+            band=band_name,
+            minutes=fetch_minutes
+        )
+        logging.info("[PROP MAP] Received %s reports for %s", len(reports), band_name)
+        if not reports:
+            self.prop_model_cache.pop(cache_key, None)
+            return []
+
+        prop_reports: list[PropagationReport] = []
+        for r in reports:
+            try:
+                azimuth = r.get('azimuth_deg', 0)
+                if azimuth == 0 and r.get('tx_grid') and r.get('rx_grid'):
+                    azimuth = calculate_bearing(r.get('tx_grid'), r.get('rx_grid'))
+
+                timestamp_obj = r.get('timestamp', datetime.datetime.utcnow())
+                if isinstance(timestamp_obj, datetime.datetime):
+                    timestamp_str = timestamp_obj.isoformat()
+                else:
+                    timestamp_str = str(timestamp_obj)
+
+                prop_report = PropagationReport(
+                    timestamp_utc=timestamp_str,
+                    band=r.get('band', band_name),
+                    snr_db=r.get('snr', 0.0),
+                    tx_call=r.get('tx_call', ''),
+                    tx_grid=r.get('tx_grid', ''),
+                    tx_lat=r.get('tx_lat', 0.0),
+                    tx_lon=r.get('tx_lon', 0.0),
+                    rx_call=r.get('rx_call', ''),
+                    rx_grid=r.get('rx_grid', ''),
+                    rx_lat=r.get('rx_lat', 0.0),
+                    rx_lon=r.get('rx_lon', 0.0),
+                    distance_km=r.get('distance_km', 0.0),
+                    azimuth_deg=azimuth,
+                    tx_power_dbm=r.get('tx_power_dbm')
+                )
+                prop_reports.append(prop_report)
+            except Exception as ex:
+                logging.debug("[PROP MAP] Error converting report: %s", ex)
+                continue
+
+        self.prop_model_cache[cache_key] = (now, fetch_minutes, prop_reports)
+        return prop_reports
+
+    def _build_probability_grid(
+        self,
+        dataset: object,
+        user_lat: float,
+        user_lon: float,
+        user_power_dbm: float,
+        threshold_db: float,
+        profile_settings: dict[str, float],
+        grid_step_deg: float,
+    ) -> list[dict[str, float]]:
+        r_tx_km = float(profile_settings.get("r_tx_km", KERNEL_EA_TX_RADIUS_KM))
+        r_rx_km = float(profile_settings.get("r_rx_km", KERNEL_EA_RX_RADIUS_KM))
+        min_weight = float(profile_settings.get("min_weight", KERNEL_EA_MIN_WEIGHT))
+        min_support = float(profile_settings.get("min_n_eff", KERNEL_EA_MIN_N_EFF))
+
+        half_step = grid_step_deg / 2.0
+        min_lat = -60.0
+        max_lat = 80.0
+        min_lon = -180.0
+        max_lon = 180.0
+
+        cells: list[dict[str, float]] = []
+        lat = min_lat + half_step
+        while lat <= max_lat - half_step + 1e-6:
+            lon = min_lon + half_step
+            while lon <= max_lon - half_step + 1e-6:
+                snr_hat, prob, support = predict_endpoint_kernel(
+                    dataset,
+                    user_lat=user_lat,
+                    user_lon=user_lon,
+                    target_lat=lat,
+                    target_lon=lon,
+                    user_power_dbm=user_power_dbm,
+                    r_tx_km=r_tx_km,
+                    r_rx_km=r_rx_km,
+                    min_weight=min_weight,
+                    top_k=KERNEL_EA_TOP_K,
+                    sharpen_gamma=KERNEL_EA_GAMMA,
+                    threshold_db=threshold_db,
+                )
+                if prob is not None and float(support.get("n_eff", 0.0)) >= min_support:
+                    cells.append({
+                        "lat": float(lat),
+                        "lon": float(lon),
+                        "probability": float(prob),
+                    })
+                lon += grid_step_deg
+            lat += grid_step_deg
+
+        return cells
 
     def check_and_update_propagation(self):
         """
@@ -987,6 +1110,143 @@ class JsApi:
         ]
         ssn_payload = self._current_ssn_payload()
         return self._response(True, "", history=serialised, **ssn_payload)
+
+    def get_propagation_map(self, mode: Optional[str] = None, cache_index: int = 0) -> str:
+        """
+        Build a world grid of propagation probabilities using the endpoint-aware kernel.
+        """
+        try:
+            prop_enabled = self.db.config.get_value('prop_enabled')
+            if not prop_enabled:
+                return self._response(False, "Propagation is disabled")
+
+            band_id = self.current_band_id or self.db.filters.band_filter
+            if band_id is None or band_id == 0:
+                return self._response(False, "Select a band to view the propagation map")
+
+            band_name = get_name_of_band(band_id)
+            if not band_name:
+                return self._response(False, "Invalid band selection")
+
+            my_grid = self.db.config.get_value('my_grid6')
+            if not my_grid or len(str(my_grid)) < 4:
+                return self._response(False, "Invalid grid square")
+
+            mode_text = str(mode or "").strip().upper()
+            if not mode_text:
+                mode_text = "FT8"
+            mode_category = categorize_operation_mode(mode_text)
+            threshold_db = MODE_THRESHOLDS_DB.get(mode_category, MODE_THRESHOLDS_DB['digital'])
+
+            profile_id = self.db.config.get_value('prop_kernel_profile_id') or DEFAULT_KERNEL_PROFILE_ID
+            profile_settings = resolve_kernel_profile(profile_id)
+            try:
+                grid_step = float(self.db.config.get_value('prop_map_grid_step_deg') or PROPAGATION_MAP_GRID_STEP_DEG)
+            except (TypeError, ValueError):
+                grid_step = PROPAGATION_MAP_GRID_STEP_DEG
+            if grid_step <= 0:
+                grid_step = PROPAGATION_MAP_GRID_STEP_DEG
+
+            try:
+                user_power_watts = float(self.db.config.get_value('default_pwr') or 10.0)
+            except (TypeError, ValueError):
+                user_power_watts = 10.0
+            if user_power_watts <= 0:
+                user_power_watts = 10.0
+            user_power_dbm = watts_to_dbm(user_power_watts)
+
+            refresh_minutes = self.db.config.get_value('prop_refresh_minutes') or 3
+            cache_key = f"{band_name.lower()}|{mode_text}|{my_grid}|{profile_id}|{user_power_watts:.1f}|{grid_step:.2f}"
+            cache_list = self.propagation_map_cache.get(cache_key, [])
+            if cache_list:
+                cache_list = list(cache_list)
+            grid_payload: Optional[dict[str, object]] = None
+            cache_index = max(0, int(cache_index))
+            if cache_list and cache_index < len(cache_list):
+                cached_time, cached_payload = cache_list[cache_index]
+                age_minutes = (datetime.datetime.utcnow() - cached_time).total_seconds() / 60.0
+                if cache_index > 0 or age_minutes < refresh_minutes:
+                    grid_payload = cached_payload
+
+            if grid_payload is None:
+                prop_reports = self._get_propagation_reports_for_band(my_grid, band_name, refresh_minutes)
+                if not prop_reports:
+                    return self._response(False, "No propagation data available yet")
+
+                dataset = build_endpoint_kernel_arrays(prop_reports)
+                if dataset is None:
+                    return self._response(False, "Unable to build kernel dataset")
+
+                try:
+                    user_lat, user_lon = grid_to_latlon(my_grid)
+                except Exception as exc:
+                    logging.error("[PROP MAP] Invalid grid: %s", exc)
+                    return self._response(False, "Invalid grid square")
+
+                grid_cells = self._build_probability_grid(
+                    dataset,
+                    user_lat=user_lat,
+                    user_lon=user_lon,
+                    user_power_dbm=user_power_dbm,
+                    threshold_db=threshold_db,
+                    profile_settings=profile_settings,
+                    grid_step_deg=grid_step,
+                )
+                created_at = datetime.datetime.utcnow().isoformat() + 'Z'
+                grid_payload = {
+                    "grid_step_deg": grid_step,
+                    "grid": grid_cells,
+                    "user": {"lat": user_lat, "lon": user_lon, "grid": my_grid},
+                    "band_name": band_name,
+                    "mode": mode_text,
+                    "created_at": created_at,
+                }
+                cache_list.insert(0, (datetime.datetime.utcnow(), grid_payload))
+                if len(cache_list) > PROPAGATION_MAP_CACHE_LIMIT:
+                    cache_list = cache_list[:PROPAGATION_MAP_CACHE_LIMIT]
+                self.propagation_map_cache[cache_key] = cache_list
+                cache_index = 0
+            else:
+                cache_index = min(cache_index, max(0, len(cache_list) - 1))
+                cache_list = self.propagation_map_cache.get(cache_key, cache_list)
+
+            spots = self.db.spots.get_spots()
+            spot_markers: list[dict[str, object]] = []
+            for spot in spots:
+                lat = spot.latitude
+                lon = spot.longitude
+                if lat is None or lon is None or (lat == 0 and lon == 0):
+                    grid = spot.grid6 or spot.grid4
+                    if grid:
+                        try:
+                            lat, lon = grid_to_latlon(grid)
+                        except Exception:
+                            continue
+                if lat is None or lon is None:
+                    continue
+
+                spot_markers.append({
+                    "spot_id": spot.spotId,
+                    "lat": float(lat),
+                    "lon": float(lon),
+                    "source": spot.spot_source,
+                    "activator": spot.activator,
+                    "reference": spot.reference,
+                    "mode": spot.mode,
+                    "probability": spot.propagation_probability,
+                })
+
+            cache_total = len(cache_list)
+            payload = {
+                **grid_payload,
+                "spots": spot_markers,
+                "cache_index": cache_index,
+                "cache_total": cache_total,
+            }
+            return self._response(True, "", **payload)
+        except Exception as exc:
+            logging.error("[PROP MAP] Failed to build map", exc_info=exc)
+            return self._response(False, "Unable to build propagation map")
 
     def get_spots(self):
         logging.debug('py get_spots')

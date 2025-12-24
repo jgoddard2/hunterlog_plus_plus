@@ -1,0 +1,117 @@
+.propagation-map-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    color: #111;
+}
+
+.propagation-map-panel__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.propagation-map-panel__title {
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.propagation-map-panel__subtitle {
+    font-size: 0.8rem;
+    color: #4a4a4a;
+}
+
+.propagation-map-panel__controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.propagation-map-panel__error {
+    color: #b42318;
+    font-size: 0.9rem;
+}
+
+.propagation-map-panel__map {
+    height: 320px;
+    width: 100%;
+    border-radius: 10px;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+    flex: 1 1 auto;
+}
+
+.propagation-map-panel__map-row {
+    display: flex;
+    gap: 0.6rem;
+    align-items: stretch;
+}
+
+.propagation-map-panel__cache {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+}
+
+.propagation-map-panel__cache-label {
+    font-size: 0.75rem;
+    color: #4a4a4a;
+}
+
+.propagation-map-panel__link {
+    cursor: pointer;
+    color: #1e88e5;
+    text-decoration: underline;
+}
+
+.propagation-map-panel__legend {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    font-size: 0.75rem;
+    color: #4a4a4a;
+}
+
+.propagation-map-panel__legend-item {
+    display: inline-flex;
+    gap: 0.4rem;
+    align-items: center;
+}
+
+.propagation-map-panel__swatch {
+    width: 14px;
+    height: 10px;
+    border-radius: 3px;
+    display: inline-block;
+}
+
+.propagation-map-panel__swatch--low {
+    background: #b71c1c;
+}
+
+.propagation-map-panel__swatch--mid {
+    background: linear-gradient(90deg, #fb8c00, #fdd835);
+}
+
+.propagation-map-panel__swatch--high {
+    background: #2e7d32;
+}
+
+.prop-map-icon {
+    background: transparent;
+    border: none;
+}
+
+.prop-map-icon--home {
+    background: #2e7d32;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}

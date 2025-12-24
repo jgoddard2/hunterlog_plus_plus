@@ -5,10 +5,12 @@ import Box from '@mui/material/Box';
 import { ActivatorInfo } from './ActivatorInfo/ActivatorInfo';
 import ParkInfo from './Map/ParkInfo';
 import PropagationHistoryPanel from './PropagationHistory/PropagationHistoryPanel';
+import PropagationMapPanel from './PropagationMap/PropagationMapPanel';
 import Stack from '@mui/material/Stack';
 import ParkIcon from '@mui/icons-material/Park';
 import PersonIcon from '@mui/icons-material/Person';
 import InsightsIcon from '@mui/icons-material/Insights';
+import MapIcon from '@mui/icons-material/Map';
 import { useAppContext } from './AppContext';
 import { useConfigContext } from './Config/ConfigContextProvider';
 import { checkApiResponse } from '../util';
@@ -131,6 +133,11 @@ export default function BasicTabs() {
                         <PropagationHistoryPanel />
                     </CustomTabPanel>
                 )}
+                {propEnabled && (
+                    <CustomTabPanel value={value} index={3}>
+                        <PropagationMapPanel active={value === 3} />
+                    </CustomTabPanel>
+                )}
                 <Tabs value={value}
                     onChange={handleChange}
                     aria-label="info tabs"
@@ -164,6 +171,13 @@ export default function BasicTabs() {
                                 <InsightsIcon />
                             </Tooltip>
                         } {...a11yProps(2)} />
+                    )}
+                    {propEnabled && (
+                        <Tab label={
+                            <Tooltip title="Propagation Map" >
+                                <MapIcon />
+                            </Tooltip>
+                        } {...a11yProps(3)} />
                     )}
                 </Tabs>
             </Stack>

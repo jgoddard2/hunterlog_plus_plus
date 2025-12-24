@@ -348,6 +348,12 @@ export default function SpotViewer() {
         contextData.continentFilter, contextData.probabilityFilter]
     );
 
+    React.useEffect(() => {
+        if (contextData.spotId) {
+            setRowSelectionModel([contextData.spotId]);
+        }
+    }, [contextData.spotId]);
+
     // return the correct PK id for our rows
     function getRowId(row: { spotId: any; }) {
         return row.spotId;

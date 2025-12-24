@@ -64,6 +64,12 @@ const ANTENNA_OPTIONS = [
     }
 ];
 
+const MAP_GRID_OPTIONS = [
+    { label: '2° grid', value: 2 },
+    { label: '5° grid (default)', value: 5 },
+    { label: '10° grid', value: 10 }
+];
+
 export default function PropagationEstimationTab() {
     const { config, setConfig } = useConfigContext();
     const [testingConnection, setTestingConnection] = React.useState(false);
@@ -118,6 +124,13 @@ export default function PropagationEstimationTab() {
     const handleHistoryWindowChange = (_event: Event, value: number | number[]) => {
         const val = Array.isArray(value) ? value[0] : value;
         setConfig({ ...config, prop_history_minutes: val });
+    };
+
+    const handleMapGridChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const val = parseFloat(event.target.value);
+        if (!Number.isNaN(val) && val > 0) {
+            setConfig({ ...config, prop_map_grid_step_deg: val });
+        }
     };
 
     const handleKernelProfileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -314,6 +327,25 @@ export default function PropagationEstimationTab() {
                                     <Typography variant="caption">
                                         Set to 0 to keep current behavior. Values above 0 fetch up to an hour of chunked predictions.
                                     </Typography>
+                                </Box>
+
+                                <Box>
+                                    <TextField
+                                        select
+                                        fullWidth
+                                        label="Map grid resolution"
+                                        value={config.prop_map_grid_step_deg ?? 10}
+                                        onChange={handleMapGridChange}
+                                        helperText="Coarser grids load faster; finer grids show more detail."
+                                        disabled={!isPropEnabled}
+                                        size="small"
+                                    >
+                                        {MAP_GRID_OPTIONS.map((option) => (
+                                            <MenuItem key={option.value} value={option.value}>
+                                                {option.label}
+                                            </MenuItem>
+                                        ))}
+                                    </TextField>
                                 </Box>
 
                                 <Box>

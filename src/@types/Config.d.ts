@@ -23,6 +23,7 @@ export interface UserConfig {
     prop_distance_scale_km: number,
     prop_azimuth_scale_deg: number,
     prop_history_minutes: number,
+    prop_map_grid_step_deg?: number,
     prop_kernel_profile_id: string,
     prop_tx_antenna_profile_id: string,
     prop_rx_antenna_profile_id: string,

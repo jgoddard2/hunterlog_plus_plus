@@ -128,6 +128,7 @@ export default function ConfigModal() {
         config.prop_ssb_threshold = Number(getVar(cfg2, "prop_ssb_threshold")) || 6;
         config.prop_digital_threshold = Number(getVar(cfg2, "prop_digital_threshold")) || -15;
         config.prop_history_minutes = Number(getVar(cfg2, "prop_history_minutes")) || 30;
+        config.prop_map_grid_step_deg = Number(getVar(cfg2, "prop_map_grid_step_deg")) || 10;
         config.prop_kernel_profile_id = getVar(cfg2, "prop_kernel_profile_id") || 'regional';
         config.prop_tx_antenna_profile_id = getVar(cfg2, "prop_tx_antenna_profile_id") || 'POTA_DIPOLE_10M';
         config.prop_rx_antenna_profile_id = getVar(cfg2, "prop_rx_antenna_profile_id") || 'POTA_DIPOLE_5M';
@@ -158,6 +159,7 @@ export default function ConfigModal() {
         setVar(config2, "prop_ssb_threshold", config.prop_ssb_threshold.toString());
         setVar(config2, "prop_digital_threshold", config.prop_digital_threshold.toString());
         setVar(config2, "prop_history_minutes", config.prop_history_minutes.toString());
+        setVar(config2, "prop_map_grid_step_deg", (config.prop_map_grid_step_deg ?? 10).toString());
         setVar(config2, "prop_kernel_profile_id", config.prop_kernel_profile_id || 'regional');
         setVar(config2, "prop_tx_antenna_profile_id", config.prop_tx_antenna_profile_id || 'POTA_DIPOLE_10M');
         setVar(config2, "prop_rx_antenna_profile_id", config.prop_rx_antenna_profile_id || 'POTA_DIPOLE_5M');

@@ -252,6 +252,15 @@ class ConfigQuery:
             'editable': 'True'
         },
         {
+            'key': 'prop_map_grid_step_deg',
+            'val': '10',
+            'type': 'float',
+            'description': 'Propagation map grid step size in degrees',
+            'group': 'propagation',
+            'enabled': 'True',
+            'editable': 'True'
+        },
+        {
             'key': 'prop_history_minutes',
             'val': '30',
             'type': 'int',
