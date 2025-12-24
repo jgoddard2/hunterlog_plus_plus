@@ -1,6 +1,7 @@
 import * as React from 'react';
 import Button from '@mui/material/Button';
-import { Backdrop, Badge, CircularProgress, styled } from '@mui/material';
+import { Backdrop, Badge, CircularProgress, Tooltip, styled } from '@mui/material';
+import Alert from '@mui/material/Alert';
 import { DataGrid, GridColDef, GridValueGetterParams, GridValueFormatterParams, GridFilterModel, GridSortModel, GridSortDirection, GridCellParams, GridRowClassNameParams, GridToolbar, GridToolbarContainer, GridToolbarDensitySelector, GridToolbarColumnsButton, GridToolbarQuickFilter, GridPaginationModel } from '@mui/x-data-grid';
 import { GridEventListener } from '@mui/x-data-grid';
 import LandscapeIcon from '@mui/icons-material/Landscape';
@@ -8,6 +9,7 @@ import ParkIcon from '@mui/icons-material/Park';
 import Brightness3Icon from '@mui/icons-material/Brightness3';
 
 import { useAppContext } from '../AppContext';
+import { useConfigContext } from '../Config/ConfigContextProvider';
 
 import { Qso } from '../../@types/QsoTypes';
 import CallToolTip from './CallTooltip';
@@ -29,7 +31,7 @@ import ScanButton from './ScanButton';
 // https://mui.com/material-ui/react-table/
 
 
-const columns: GridColDef[] = [
+const createBaseColumns = (isDarkMode: boolean): GridColDef[] => [
     // { field: 'spotId', headerName: 'ID', width: 70 },
     {
         field: 'activator', headerName: 'Activator', width: 130,
@@ -55,13 +57,13 @@ const columns: GridColDef[] = [
         field: 'frequency', headerName: 'Freq', width: 100, type: 'number',
         renderCell: (x) => {
             return (
-                <FreqButton activator={x.row.activator} frequency={x.row.frequency} mode={x.row.mode} />
+                <FreqButton activator={x.row.activator} frequency={x.row.frequency} mode={x.row.mode} spotId={x.row.spotId} />
             );
         }
     },
-    { field: 'mode', headerName: 'Mode', width: 100 },
+    { field: 'mode', headerName: 'Mode', width: 80 },
     {
-        field: 'locationDesc', headerName: 'Loc', width: 120,
+        field: 'locationDesc', headerName: 'Loc', width: 100,
         renderCell: (x) => {
             function getContent() {
                 return (
@@ -119,7 +121,7 @@ const columns: GridColDef[] = [
     },
     {
         field: 'propagation',
-        headerName: 'Prop',
+        headerName: 'Propagation Prediction',
         width: 220,
         type: 'number',
         headerAlign: 'left',
@@ -164,10 +166,12 @@ const columns: GridColDef[] = [
             };
 
             return (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 'bold', fontSize: '0.85rem', color: '#111' }}>
-                    <span style={circleStyle} />
-                    <span>{`${modeLabel}${mm} | SNR: ${nn} | ${pp}`}</span>
-                </span>
+                <Tooltip title="Mode – radio mode · Probability – chance of success · SNR – projected receive level · Support – WSPR reports backing the estimate">
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 'bold', fontSize: '0.85rem', color: isDarkMode ? '#fff' : '#111' }}>
+                        <span style={circleStyle} />
+                        <span>{`${modeLabel}${mm} | SNR: ${nn} | ${pp}`}</span>
+                    </span>
+                </Tooltip>
             );
         }
     },
@@ -224,6 +228,18 @@ export default function SpotViewer() {
     const [rowSelectionModel, setRowSelectionModel] = React.useState<any[]>([]);
     const [backdropOpen, setBackdropOpen] = React.useState(false);
     const { contextData, setData, qsyButtonId, setLastQsyBtnId } = useAppContext();
+    const { config } = useConfigContext();
+    const propEnabled = config.prop_enabled ?? true;
+    const isDarkMode = contextData.themeMode === 'dark';
+    const baseColumns = React.useMemo(() => createBaseColumns(isDarkMode), [isDarkMode]);
+    const columnDefs = React.useMemo(() => {
+        if (propEnabled) {
+            return baseColumns;
+        }
+        return baseColumns.filter((col) => col.field !== 'propagation');
+    }, [propEnabled, baseColumns]);
+    const activeBandFilter = contextData.bandFilter ?? 0;
+    const multipleBandsVisible = propEnabled && spots.length > 0 && activeBandFilter === 0;
 
     function getSpots() {
         // get the spots from the db
@@ -329,7 +345,7 @@ export default function SpotViewer() {
         [contextData.bandFilter, contextData.regionFilter,
         contextData.qrtFilter, contextData.locationFilter,
         contextData.huntedFilter, contextData.onlyNewFilter,
-        contextData.continentFilter, contextData.snrFilter]
+        contextData.continentFilter, contextData.probabilityFilter]
     );
 
     // return the correct PK id for our rows
@@ -390,6 +406,12 @@ export default function SpotViewer() {
                 <CircularProgress color="inherit" />
             </Backdrop>
 
+            {multipleBandsVisible && (
+                <Alert severity="warning" sx={{ mb: 1 }}>
+                    Propagation estimates only work when a single band is selected. Choose a band in the filter bar to enable predictions.
+                </Alert>
+            )}
+
             <DataGrid
                 rows={spots}
                 sx={{
@@ -401,7 +423,7 @@ export default function SpotViewer() {
                     },
                 }}
                 slots={{ toolbar: CustomToolbar }}
-                columns={columns}
+                columns={columnDefs}
                 getRowId={getRowId}
                 initialState={{
                     pagination: {

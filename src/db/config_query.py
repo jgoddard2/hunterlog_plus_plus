@@ -318,10 +318,12 @@ class ConfigQuery:
 
         if x.type == "int":
             return int(x.val)
+        elif x.type == "float":
+            return float(x.val)
         elif x.type == "string":
             return str(x.val)
         elif x.type == "bool":
-            return str_to_bool(x.val)
+            return str_to_bool(str(x.val))
         else:
             logging.warning(f"unknown type: {x.type} for key {k}")
             return str(x.val)
@@ -334,10 +336,15 @@ class ConfigQuery:
 
         if x.type == "int":
             x.val = int(val)
+        elif x.type == "float":
+            x.val = float(val)
         elif x.type == "string":
             x.val = str(val)
         elif x.type == "bool":
-            x.val = True if (val) else False
+            if isinstance(val, str):
+                x.val = val.strip().lower() in ('true', '1', 't', 'y', 'yes', 'on')
+            else:
+                x.val = bool(val)
         else:
             logging.warning(f"unknown type: {x.type} for key {k}")
             x.val = val

@@ -46,7 +46,7 @@
     "@mui/base": "^5.0.0-alpha.129",
     "@mui/icons-material": "^5.15.10",
     "@mui/material": "^5.15.10",
-    "@mui/system": "^7.3.6",
+    "@mui/system": "^5.15.10",
     "@mui/x-data-grid": "^6.19.4",
     "@mui/x-date-pickers": "^6.19.4",
     "@types/leaflet": "^1.9.8",

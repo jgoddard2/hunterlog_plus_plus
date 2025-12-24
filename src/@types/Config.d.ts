@@ -26,6 +26,7 @@ export interface UserConfig {
     prop_kernel_profile_id: string,
     prop_tx_antenna_profile_id: string,
     prop_rx_antenna_profile_id: string,
+    prop_ssn_override_enabled?: boolean,
 }
 
 export interface ConfigVer2 {

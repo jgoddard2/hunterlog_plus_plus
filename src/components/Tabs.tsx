@@ -10,6 +10,7 @@ import ParkIcon from '@mui/icons-material/Park';
 import PersonIcon from '@mui/icons-material/Person';
 import InsightsIcon from '@mui/icons-material/Insights';
 import { useAppContext } from './AppContext';
+import { useConfigContext } from './Config/ConfigContextProvider';
 import { checkApiResponse } from '../util';
 import Badge from '@mui/material/Badge';
 import { Tooltip } from '@mui/material';
@@ -52,6 +53,8 @@ export default function BasicTabs() {
     const [hunts, setHunts] = React.useState(0);
     const [newBand, setNewBand] = React.useState(false);
     const [invisible, setInvisible] = React.useState(true);
+    const { config } = useConfigContext();
+    const propEnabled = config.prop_enabled ?? true;
 
     const handleBadgeVisibility = () => {
         setInvisible(!invisible);
@@ -98,6 +101,12 @@ export default function BasicTabs() {
         onParkChange();
     }, [contextData.park]);
 
+    React.useEffect(() => {
+        if (!propEnabled && value > 1) {
+            setValue(0);
+        }
+    }, [propEnabled, value]);
+
     function getColor(): string {
         if (hunts == 0)
             return '#d9534f';
@@ -117,9 +126,11 @@ export default function BasicTabs() {
                 <CustomTabPanel value={value} index={1}>
                     <ParkInfo />
                 </CustomTabPanel>
-                <CustomTabPanel value={value} index={2}>
-                    <PropagationHistoryPanel />
-                </CustomTabPanel>
+                {propEnabled && (
+                    <CustomTabPanel value={value} index={2}>
+                        <PropagationHistoryPanel />
+                    </CustomTabPanel>
+                )}
                 <Tabs value={value}
                     onChange={handleChange}
                     aria-label="info tabs"
@@ -147,11 +158,13 @@ export default function BasicTabs() {
                         </Badge>
 
                     } {...a11yProps(1)} />
-                    <Tab label={
-                        <Tooltip title="Propagation History" >
-                            <InsightsIcon />
-                        </Tooltip>
-                    } {...a11yProps(2)} />
+                    {propEnabled && (
+                        <Tab label={
+                            <Tooltip title="Propagation History" >
+                                <InsightsIcon />
+                            </Tooltip>
+                        } {...a11yProps(2)} />
+                    )}
                 </Tabs>
             </Stack>
         </Box>

@@ -224,7 +224,8 @@ const PropagationHistoryChart = ({ data, mode }: ChartProps) => {
 
 interface SsnInfo {
     value: number | null;
-    source: 'observed' | 'fallback' | null;
+    source: 'observed' | 'fallback' | 'override' | null;
+    updated: Date | null;
 }
 
 const PropagationHistoryPanel = () => {
@@ -235,7 +236,7 @@ const PropagationHistoryPanel = () => {
     const [infoMessage, setInfoMessage] = React.useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null);
     const [chartMode, setChartMode] = React.useState<ChartMode>('probability');
-    const [ssnInfo, setSsnInfo] = React.useState<SsnInfo>({ value: null, source: null });
+    const [ssnInfo, setSsnInfo] = React.useState<SsnInfo>({ value: null, source: null, updated: null });
 
     const ctxRef = React.useRef(contextData);
     React.useEffect(() => {
@@ -243,6 +244,7 @@ const PropagationHistoryPanel = () => {
     }, [contextData]);
 
     const spotId = contextData.spotId;
+    const isDarkMode = contextData.themeMode === 'dark';
     React.useEffect(() => {
         setInfoMessage(null);
         setChartMode('probability');
@@ -251,13 +253,13 @@ const PropagationHistoryPanel = () => {
             setError(null);
             setLastUpdated(null);
             lastSuccessfulSpotId.current = null;
-            setSsnInfo({ value: null, source: null });
+            setSsnInfo({ value: null, source: null, updated: null });
             return;
         }
         setHistory([]);
         setError(null);
         lastSuccessfulSpotId.current = null;
-        setSsnInfo({ value: null, source: null });
+        setSsnInfo({ value: null, source: null, updated: null });
     }, [spotId]);
     const lastSuccessfulSpotId = React.useRef<number | null>(null);
 
@@ -267,7 +269,7 @@ const PropagationHistoryPanel = () => {
             setError(null);
             setInfoMessage(null);
             setLastUpdated(null);
-            setSsnInfo({ value: null, source: null });
+            setSsnInfo({ value: null, source: null, updated: null });
             return;
         }
 
@@ -285,6 +287,7 @@ const PropagationHistoryPanel = () => {
                     history?: PropagationHistoryPoint[];
                     ssn?: number;
                     ssn_source?: string;
+                    ssn_updated?: string;
                 };
                 try {
                     payload = JSON.parse(response);
@@ -293,7 +296,7 @@ const PropagationHistoryPanel = () => {
                     setHistory([]);
                     setLastUpdated(null);
                     lastSuccessfulSpotId.current = null;
-                    setSsnInfo({ value: null, source: null });
+                    setSsnInfo({ value: null, source: null, updated: null });
                     return;
                 }
 
@@ -302,8 +305,13 @@ const PropagationHistoryPanel = () => {
                     ? 'observed'
                     : payload.ssn_source === 'fallback'
                         ? 'fallback'
-                        : null;
-                setSsnInfo({ value: ssnValue, source: ssnSource });
+                        : payload.ssn_source === 'override'
+                            ? 'override'
+                            : null;
+                const updatedIso = typeof payload.ssn_updated === 'string' ? payload.ssn_updated : null;
+                const updatedDate = updatedIso ? new Date(updatedIso) : null;
+                const ssnUpdated = updatedDate && !isNaN(updatedDate.getTime()) ? updatedDate : null;
+                setSsnInfo({ value: ssnValue, source: ssnSource, updated: ssnUpdated });
 
                 if (!payload.success) {
                     if (payload.message === 'spot not found') {
@@ -345,7 +353,7 @@ const PropagationHistoryPanel = () => {
                 setHistory([]);
                 setLastUpdated(null);
                 lastSuccessfulSpotId.current = null;
-                setSsnInfo({ value: null, source: null });
+                setSsnInfo({ value: null, source: null, updated: null });
             })
             .finally(() => setLoading(false));
     }, [spotId]);
@@ -398,15 +406,28 @@ const PropagationHistoryPanel = () => {
         ? 'Observed NOAA SSN'
         : ssnInfo.source === 'fallback'
             ? 'Fallback SSN (config)'
-            : '';
+            : ssnInfo.source === 'override'
+                ? 'User override (Propagation tab)'
+                : '';
+    const ssnUpdatedLabel = ssnInfo.updated
+        ? ssnInfo.updated.toLocaleString([], {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZoneName: 'short'
+        })
+        : null;
 
     const nextMode = chartMode === 'probability' ? 'SNR' : 'probability';
     const toggleChartMode = () => {
         setChartMode((prev) => (prev === 'probability' ? 'snr' : 'probability'));
     };
 
+    const panelClassName = `propagation-history-panel${isDarkMode ? ' propagation-history-panel--dark' : ''}`;
+
     return (
-        <div className='propagation-history-panel'>
+        <div className={panelClassName}>
             <div className='propagation-history-panel__header'>
                 <div>
                     <div className='propagation-history-panel__title'>Propagation History</div>
@@ -414,7 +435,14 @@ const PropagationHistoryPanel = () => {
                         <span>{subtitle}</span>
                         {spotId && ssnDisplay !== null && (
                             <Tooltip title={ssnTitle}>
-                                <span className='propagation-history-panel__ssn'>SSN: {ssnDisplay}</span>
+                                <span className='propagation-history-panel__ssn'>
+                                    SSN: {ssnDisplay}
+                                    {ssnUpdatedLabel && (
+                                        <span className='propagation-history-panel__ssn-update'>
+                                            (updated {ssnUpdatedLabel})
+                                        </span>
+                                    )}
+                                </span>
                             </Tooltip>
                         )}
                     </div>

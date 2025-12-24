@@ -7,6 +7,25 @@
     color: #111;
 }
 
+.propagation-history-panel--dark {
+    color: #f5f5f5;
+}
+
+.propagation-history-panel--dark .propagation-history-panel__title,
+.propagation-history-panel--dark .propagation-history-panel__subtitle,
+.propagation-history-panel--dark .propagation-history-panel__stats,
+.propagation-history-panel--dark .propagation-history-panel__info {
+    color: #f5f5f5;
+}
+
+.propagation-history-panel--dark .propagation-history-panel__ssn {
+    color: #c8e6c9;
+}
+
+.propagation-history-panel--dark .propagation-history-panel__error {
+    color: #ffab91;
+}
+
 .propagation-history-panel__header {
     display: flex;
     justify-content: space-between;
@@ -33,6 +52,13 @@
     font-weight: 600;
     color: #14532d;
     font-size: 0.8rem;
+}
+
+.propagation-history-panel__ssn-update {
+    margin-left: 0.35rem;
+    font-weight: 500;
+    color: #1f2937;
+    font-size: 0.72rem;
 }
 
 .propagation-history-panel__stats {

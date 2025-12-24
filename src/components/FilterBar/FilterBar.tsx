@@ -9,6 +9,7 @@ import Switch from '@mui/material/Switch';
 import { Box, Stack, Typography, createStyles, useTheme } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { createEqualityFilter, useAppContext } from '../AppContext';
+import { useConfigContext } from '../Config/ConfigContextProvider';
 
 import './FilterBar.scss'
 
@@ -16,6 +17,34 @@ import './FilterBar.scss'
 
 interface IFilterBarPros {
 }
+
+const PATH_PROBABILITY_OPTIONS = [
+    { label: '≥ 10%', value: '0.1-1.0' },
+    { label: '≥ 20%', value: '0.2-1.0' },
+    { label: '≥ 30%', value: '0.3-1.0' },
+    { label: '≥ 40%', value: '0.4-1.0' },
+    { label: '≥ 50%', value: '0.5-1.0' },
+    { label: '≥ 60%', value: '0.6-1.0' },
+    { label: '≥ 70%', value: '0.7-1.0' },
+    { label: '≥ 80%', value: '0.8-1.0' },
+    { label: '≥ 90%', value: '0.9-1.0' },
+];
+
+const parseProbabilityRange = (value: string): [number, number] | null => {
+    if (!value) {
+        return null;
+    }
+    const parts = value.split('-');
+    if (parts.length !== 2) {
+        return null;
+    }
+    const min = parseFloat(parts[0]);
+    const max = parseFloat(parts[1]);
+    if (Number.isNaN(min) || Number.isNaN(max)) {
+        return null;
+    }
+    return [min, max];
+};
 
 
 export const FilterBar = (props: IFilterBarPros) => {
@@ -25,12 +54,15 @@ export const FilterBar = (props: IFilterBarPros) => {
     const [continent, setContinent] = React.useState<string[]>([]);
     const [loc, setLocation] = React.useState('');
     const [sig, setSig] = React.useState('');
-    const [snr, setSnr] = React.useState('');
+    const [pathProbability, setPathProbability] = React.useState('');
     const [qrt, setQrt] = React.useState(true);
     const [hunted, setHunted] = React.useState(false);
     const [onlyNew, setOnlyNew] = React.useState(false);
 
     const { contextData, setData } = useAppContext();
+    const { config } = useConfigContext();
+    const propEnabled = config.prop_enabled ?? true;
+    const ctxProbabilityFilter = contextData.probabilityFilter;
 
     // load up all the data stored in localStorage and use them... after the 
     // API is ready
@@ -61,10 +93,45 @@ export const FilterBar = (props: IFilterBarPros) => {
 
             let sf = window.localStorage.getItem("SIG_FILTER") || '';
             setSigFilter(sf);
-            let snrf = window.localStorage.getItem("SNR_FILTER") || '';
-            setSnrFilterValue(snrf);
+            let prob = window.localStorage.getItem("PATH_PROB_FILTER") || '';
+            setPathProbabilityValue(prob);
         };
     }, []);
+
+    React.useEffect(() => {
+        const applyProbabilityFilter = (value: string) => {
+            if (!window.pywebview?.api) {
+                return;
+            }
+            const range = parseProbabilityRange(value);
+            if (window.pywebview.api.set_probability_filter) {
+                if (!range) {
+                    window.pywebview.api.set_probability_filter(null, null);
+                } else {
+                    window.pywebview.api.set_probability_filter(range[0], range[1]);
+                }
+            } else if (window.pywebview.api.set_snr_filter) {
+                if (!range) {
+                    window.pywebview.api.set_snr_filter(null);
+                } else {
+                    window.pywebview.api.set_snr_filter(range[0]);
+                }
+            }
+        };
+
+        if (!propEnabled) {
+            applyProbabilityFilter('');
+            if (ctxProbabilityFilter !== '') {
+                setData({ ...contextData, probabilityFilter: '' });
+            }
+            return;
+        }
+
+        applyProbabilityFilter(pathProbability);
+        if (ctxProbabilityFilter !== pathProbability) {
+            setData({ ...contextData, probabilityFilter: pathProbability });
+        }
+    }, [propEnabled, pathProbability, ctxProbabilityFilter]);
 
     const handleChange = (event: SelectChangeEvent) => {
         let m = event.target.value as string
@@ -132,10 +199,10 @@ export const FilterBar = (props: IFilterBarPros) => {
         window.localStorage.setItem("SIG_FILTER", sig);
     }
 
-    const handleSnrChange = (event: SelectChangeEvent) => {
+    const handleProbabilityChange = (event: SelectChangeEvent) => {
         let value = event.target.value as string;
-        setSnrFilterValue(value);
-        window.localStorage.setItem("SNR_FILTER", value);
+        setPathProbabilityValue(value);
+        window.localStorage.setItem("PATH_PROB_FILTER", value);
     }
 
     const handleClear = () => {
@@ -159,7 +226,7 @@ export const FilterBar = (props: IFilterBarPros) => {
         setHunted(false);
         setOnlyNew(false);
         setSig("");
-        setSnrFilterValue('');
+        setPathProbabilityValue('');
 
         window.localStorage.setItem("BAND_FILTER", '0');
         window.localStorage.setItem("REGION_FILTER", '');
@@ -170,7 +237,7 @@ export const FilterBar = (props: IFilterBarPros) => {
         window.localStorage.setItem("HUNTED_FILTER", 'false');
         window.localStorage.setItem("ATNO_FILTER", 'false');
         window.localStorage.setItem("SIG_FILTER", '');
-        window.localStorage.setItem("SNR_FILTER", '');
+        window.localStorage.setItem("PATH_PROB_FILTER", '');
 
         const next = {
             ...contextData,
@@ -181,7 +248,7 @@ export const FilterBar = (props: IFilterBarPros) => {
             huntedFilter: false,
             onlyNew: false,
             sigFilter: '',
-            snrFilter: ''
+            probabilityFilter: ''
         };
         setData(next);
 
@@ -247,7 +314,7 @@ export const FilterBar = (props: IFilterBarPros) => {
         window.pywebview.api.set_band_filter(x);
 
         // Trigger propagation fetch for the new band
-        if (window.pywebview.api.trigger_propagation_fetch) {
+        if (propEnabled && window.pywebview.api.trigger_propagation_fetch) {
             console.log("Triggering propagation fetch for band:", x);
             window.pywebview.api.trigger_propagation_fetch(x);
         }
@@ -291,14 +358,8 @@ export const FilterBar = (props: IFilterBarPros) => {
         setSig(sig);
     }
 
-    function setSnrFilterValue(value: string) {
-        const threshold = value === '' ? null : parseFloat(value);
-        if (window.pywebview?.api?.set_snr_filter) {
-            window.pywebview.api.set_snr_filter(threshold);
-        }
-        let next = { ...contextData, snrFilter: value };
-        setData(next);
-        setSnr(value);
+    function setPathProbabilityValue(value: string) {
+        setPathProbability(value);
     }
 
 
@@ -372,7 +433,7 @@ export const FilterBar = (props: IFilterBarPros) => {
                         id="demo-simple-select"
                         value={mode}
                         variant='standard'
-                        sx={{ minWidth: 75 }}
+                        sx={{ minWidth: 65 }}
                         onChange={handleChange}
                     >
                         <MenuItem value=""><em>None</em></MenuItem>
@@ -384,30 +445,24 @@ export const FilterBar = (props: IFilterBarPros) => {
                         <MenuItem value='FT4'>FT4</MenuItem>
                     </Select>
                 </FormControl>
-                <FormControl size='small'>
-                    <StyledInputLabel id="snr-label">SNR</StyledInputLabel>
-                    <Select
-                        labelId="snr-label"
-                        id="snr-select"
-                        value={snr}
-                        variant='standard'
-                        sx={{ minWidth: 110 }}
-                        onChange={handleSnrChange}
-                    >
-                        <MenuItem value=""><em>None</em></MenuItem>
-                        <MenuItem value='-30'>-30 dB & up</MenuItem>
-                        <MenuItem value='-25'>-25 dB & up</MenuItem>
-                        <MenuItem value='-20'>-20 dB & up</MenuItem>
-                        <MenuItem value='-15'>-15 dB & up</MenuItem>
-                        <MenuItem value='-10'>-10 dB & up</MenuItem>
-                        <MenuItem value='-5'>-5 dB & up</MenuItem>
-                        <MenuItem value='0'>0 dB & up</MenuItem>
-                        <MenuItem value='1'>1 dB & up</MenuItem>
-                        <MenuItem value='5'>5 dB & up</MenuItem>
-                        <MenuItem value='10'>10 dB & up</MenuItem>
-                        <MenuItem value='15'>15 dB & up</MenuItem>
-                    </Select>
-                </FormControl>
+                {propEnabled && (
+                    <FormControl size='small'>
+                        <StyledInputLabel id="prob-label">Path Probability</StyledInputLabel>
+                        <Select
+                            labelId="prob-label"
+                            id="prob-select"
+                            value={pathProbability}
+                            variant='standard'
+                            sx={{ minWidth: 130 }}
+                            onChange={handleProbabilityChange}
+                        >
+                            <MenuItem value=""><em>None</em></MenuItem>
+                            {PATH_PROBABILITY_OPTIONS.map((opt) => (
+                                <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                )}
                 <FormControl size='small'>
                     <StyledInputLabel id="demo-simple-select-label">Continent</StyledInputLabel>
                     <Select

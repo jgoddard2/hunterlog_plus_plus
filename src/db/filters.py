@@ -18,7 +18,7 @@ class Filters:
         self.only_new_on = False  # filter out parks you have never worked
         self.cont_filter = list[str]()
         self.sig_filter = ''
-        self.snr_threshold = None
+        self.probability_range: Optional[tuple[float, float]] = None
 
     def set_band_filter(self, band: Bands):
         logging.debug(f"setting band filter to {band}")
@@ -51,9 +51,24 @@ class Filters:
     def set_sig_filter(self, sig: str):
         self.sig_filter = sig
 
+    def set_probability_filter(self, min_probability: Optional[float], max_probability: Optional[float]):
+        logging.debug(f"setting probability filter to {min_probability} - {max_probability}")
+        if min_probability is None or max_probability is None:
+            self.probability_range = None
+            return
+        low = max(0.0, min(min_probability, max_probability))
+        high = min(1.0, max(min_probability, max_probability))
+        self.probability_range = (low, high)
+
     def set_snr_filter(self, snr_threshold: Optional[float]):
-        logging.debug(f"setting SNR filter to {snr_threshold}")
-        self.snr_threshold = snr_threshold
+        """
+        Backward compatible setter that maps an SNR threshold to a probability
+        filter (>= threshold). Threshold is assumed to be provided as 0-1.
+        """
+        if snr_threshold is None:
+            self.set_probability_filter(None, None)
+        else:
+            self.set_probability_filter(float(snr_threshold), 1.0)
 
     def get_and_filters(self) -> list[sa.ColumnElement[bool]]:
         '''
@@ -66,7 +81,7 @@ class Filters:
             self._get_hunted_filter() + \
             self._get_only_new_filter() + \
             self._get_sig_filter() + \
-            self._get_snr_filter()
+            self._get_probability_filter()
 
     def get_or_filters(self) -> list[sa.ColumnElement[bool]]:
         '''
@@ -141,12 +156,14 @@ class Filters:
         terms = [Spot.spot_source == sig]
         return terms
 
-    def _get_snr_filter(self) -> list[sa.ColumnElement[bool]]:
-        if self.snr_threshold is None:
+    def _get_probability_filter(self) -> list[sa.ColumnElement[bool]]:
+        if self.probability_range is None:
             return []
+        min_prob, max_prob = self.probability_range
         return [
             sa.and_(
-                Spot.propagation_snr.isnot(None),
-                Spot.propagation_snr >= float(self.snr_threshold)
+                Spot.propagation_probability.isnot(None),
+                Spot.propagation_probability >= float(min_prob),
+                Spot.propagation_probability <= float(max_prob) + 1e-9
             )
         ]

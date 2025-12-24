@@ -16,7 +16,6 @@ import StatsMenu from './StatsMenu';
 import AlertsArea from './AlertsArea';
 import AlertsMenu from './AlertsMenu';
 import { checkApiResponse } from '../../util';
-import { ConfigContextProvider } from '../Config/ConfigContextProvider';
 
 export default function AppMenu() {
 
@@ -164,9 +163,7 @@ export default function AppMenu() {
                         component="div" ml={1} mr={1}>
                         {callsign}
                     </Typography>
-                    <ConfigContextProvider>
-                        <ConfigModal />
-                    </ConfigContextProvider>
+                    <ConfigModal />
                     <StatsMenu />
                     <AlertsMenu />
 

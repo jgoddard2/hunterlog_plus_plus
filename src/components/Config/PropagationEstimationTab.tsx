@@ -69,6 +69,24 @@ export default function PropagationEstimationTab() {
     const [testingConnection, setTestingConnection] = React.useState(false);
     const [connectionStatus, setConnectionStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
     const isPropEnabled = config.prop_enabled ?? true;
+    const overrideEnabled = config.prop_ssn_override_enabled ?? false;
+
+    const applySsnOverride = React.useCallback(
+        async (enabled: boolean, overrideValue?: number) => {
+            if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.set_ssn_override) {
+                return;
+            }
+            const nextValue = typeof overrideValue === 'number' && !Number.isNaN(overrideValue)
+                ? overrideValue
+                : config.prop_default_ssn ?? 61;
+            try {
+                await window.pywebview.api.set_ssn_override(enabled, nextValue);
+            } catch (error) {
+                console.error('Failed to update SSN override', error);
+            }
+        },
+        [config.prop_default_ssn]
+    );
 
     const handleEnabledChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const newConfig = { ...config, prop_enabled: event.target.checked };
@@ -86,7 +104,15 @@ export default function PropagationEstimationTab() {
         const val = parseFloat(event.target.value);
         if (!isNaN(val) && val > 0) {
             setConfig({ ...config, prop_default_ssn: val });
+            if (overrideEnabled) {
+                applySsnOverride(true, val);
+            }
         }
+    };
+
+    const handleOverrideToggle = (_event: React.ChangeEvent<HTMLInputElement>, checked: boolean) => {
+        setConfig({ ...config, prop_ssn_override_enabled: checked });
+        applySsnOverride(checked, config.prop_default_ssn ?? 61);
     };
 
     const handleHistoryWindowChange = (_event: Event, value: number | number[]) => {
@@ -138,6 +164,19 @@ export default function PropagationEstimationTab() {
         [config.prop_rx_antenna_profile_id]
     );
 
+    React.useEffect(() => {
+        if (!isPropEnabled && overrideEnabled) {
+            setConfig({ ...config, prop_ssn_override_enabled: false });
+            applySsnOverride(false);
+        }
+    }, [isPropEnabled, overrideEnabled, applySsnOverride]);
+
+    React.useEffect(() => {
+        if (overrideEnabled) {
+            applySsnOverride(true, config.prop_default_ssn ?? 61);
+        }
+    }, [overrideEnabled, config.prop_default_ssn, applySsnOverride]);
+
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Typography variant="h6">Propagation Estimation </Typography>
@@ -171,16 +210,41 @@ export default function PropagationEstimationTab() {
                                 size="small"
                             />
 
-                            <TextField
-                                label="Fallback SSN"
-                                type="number"
-                                value={config.prop_default_ssn ?? 61}
-                                onChange={handleDefaultSsnChange}
-                                helperText="Used when NOAA SSN cannot be retrieved"
-                                inputProps={{ min: 1, step: 1 }}
-                                disabled={!isPropEnabled}
-                                size="small"
-                            />
+                            <Box
+                                sx={{
+                                    display: 'flex',
+                                    flexDirection: 'row',
+                                    flexWrap: 'nowrap',
+                                    alignItems: 'flex-end',
+                                    gap: 2
+                                }}
+                            >
+                                <TextField
+                                    label="Fallback SSN"
+                                    type="number"
+                                    value={config.prop_default_ssn ?? 61}
+                                    onChange={handleDefaultSsnChange}
+                                    helperText="Used when NOAA SSN cannot be retrieved"
+                                    inputProps={{ min: 1, step: 1 }}
+                                    disabled={!isPropEnabled}
+                                    size="small"
+                                    sx={{ width: 160, flex: '0 0 auto' }}
+                                />
+                                <FormControlLabel
+                                    sx={{ marginLeft: 'auto', alignItems: 'center' }}
+                                    control={
+                                        <Switch
+                                            checked={overrideEnabled}
+                                            onChange={handleOverrideToggle}
+                                            disabled={!isPropEnabled}
+                                        />
+                                    }
+                                    label="Override SSN"
+                                />
+                            </Box>
+                            <Typography variant="caption" color="text.secondary">
+                                Force predictions to use this SSN until you turn the override off.
+                            </Typography>
                         </Box>
                     </Grid>
 

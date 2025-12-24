@@ -59,6 +59,8 @@ PROPAGATION_CONFIG_KEYS = [
     'prop_rx_antenna_profile_id',
     'prop_distance_scale_km',
     'prop_azimuth_scale_deg',
+    'default_pwr',
+    'my_grid6',
 ]
 
 
@@ -88,6 +90,8 @@ class JsApi:
         self.current_ssn_value: Optional[float] = None
         self.current_ssn_source: str = 'fallback'
         self.current_ssn_updated: Optional[datetime.datetime] = None
+        self.ssn_override_enabled: bool = False
+        self.ssn_override_value: Optional[float] = None
         self._prime_ssn_defaults()
 
         logging.debug("init CAT...")
@@ -148,19 +152,32 @@ class JsApi:
                 snapshot[key] = None
         return snapshot
 
-    def _clear_propagation_caches(self) -> None:
+    def _clear_propagation_caches(self, force: bool = False) -> bool:
         """Reset cached propagation landscapes/history."""
         acquired = self.lock.acquire(timeout=4.0)
+        if not acquired and force:
+            logging.warning("[PROP CFG] Cache clear waiting for propagation worker to finish")
+            self.lock.acquire()
+            acquired = True
         if not acquired:
             logging.warning("[PROP CFG] Unable to acquire lock to clear propagation caches")
-            return
+            return False
         try:
             self.prop_model_cache.clear()
             self.propagation_snapshot.clear()
             self.propagation_history.clear()
             logging.info("[PROP CFG] Cleared cached propagation datasets due to config change")
+            return True
         finally:
             self.lock.release()
+
+    def _reset_propagation_state(self) -> None:
+        """Clear propagation caches and reset runtime state."""
+        self._clear_propagation_caches(force=True)
+        self.last_prop_update = None
+        self.current_band_id = 0
+        self._prime_ssn_defaults()
+        logging.info("[PROP CFG] Propagation runtime state reset")
 
     def _handle_propagation_settings_change(self) -> None:
         """Clear caches and rerun predictions for the current band."""
@@ -195,14 +212,20 @@ class JsApi:
     def _refresh_current_ssn(self) -> float:
         """Fetch the observed NOAA SSN, falling back to the configured default."""
         fallback = self._get_configured_default_ssn()
-        try:
-            value, observed = resolve_noaa_ssn(fallback=fallback, use_smoothed=False)
-        except Exception as exc:
-            logging.debug("[SSN] NOAA fetch failed: %s", exc)
-            value = fallback
-            observed = False
+        source = 'fallback'
+        if self.ssn_override_enabled:
+            value = self.ssn_override_value if self.ssn_override_value is not None else fallback
+            source = 'override'
+        else:
+            try:
+                value, observed = resolve_noaa_ssn(fallback=fallback, use_smoothed=False)
+                source = 'observed' if observed else 'fallback'
+            except Exception as exc:
+                logging.debug("[SSN] NOAA fetch failed: %s", exc)
+                value = fallback
+                source = 'fallback'
         self.current_ssn_value = value
-        self.current_ssn_source = 'observed' if observed else 'fallback'
+        self.current_ssn_source = source
         self.current_ssn_updated = datetime.datetime.utcnow()
         return value
 
@@ -916,6 +939,8 @@ class JsApi:
                     self._record_history_for_chunk(chunk_predictions, spot_lookup, chunk_time)
 
             latest_time, latest_predictions = prediction_series[-1]
+            if chunk_mode:
+                self._record_history_for_chunk(latest_predictions, spot_lookup, datetime.datetime.utcnow())
             band_snapshot: dict[str, dict[str, object]] = {}
             update_count = self._apply_predictions_to_spots(
                 latest_predictions,
@@ -1386,15 +1411,42 @@ class JsApi:
         try:
             if not prev_prop_enabled and new_prop_enabled:
                 logging.info("[PROP FETCH] Propagation enabled via config; refreshing predictions for active band")
+                self._reset_propagation_state()
                 self._handle_propagation_settings_change()
             elif prev_prop_enabled and not new_prop_enabled:
                 logging.info("[PROP FETCH] Propagation disabled via config; clearing cached predictions")
-                self._clear_propagation_caches()
+                self._reset_propagation_state()
             elif new_prop_enabled and settings_changed:
                 logging.info("[PROP CFG] Propagation settings updated; re-running predictions")
                 self._handle_propagation_settings_change()
         except Exception as ex:
             logging.error("Error triggering propagation fetch after enabling propagation", exc_info=ex)
+
+    def set_ssn_override(self, enabled: bool, override_value: Optional[float] = None) -> str:
+        """
+        Allow the UI to temporarily override NOAA SSN readings with the configured fallback.
+        The override only persists for the current runtime session.
+        """
+        self.ssn_override_enabled = bool(enabled)
+        if self.ssn_override_enabled:
+            try:
+                numeric_value = float(override_value) if override_value is not None else None
+            except (TypeError, ValueError):
+                numeric_value = None
+            if numeric_value is None or numeric_value <= 0:
+                numeric_value = self._get_configured_default_ssn()
+            self.ssn_override_value = numeric_value
+            logging.info("[SSN] Override enabled with value %.1f", numeric_value)
+        else:
+            logging.info("[SSN] Override disabled; reverting to NOAA feed")
+            self.ssn_override_value = None
+
+        self._refresh_current_ssn()
+        try:
+            self._handle_propagation_settings_change()
+        except Exception as exc:
+            logging.error("[SSN] Failed to refresh propagation after override toggle", exc_info=exc)
+        return self._response(True, "", override=self.ssn_override_enabled, ssn=self.current_ssn_value)
 
     def set_band_filter(self, band: int):
         logging.debug(f"api setting band filter to: {band}")
@@ -1433,13 +1485,23 @@ class JsApi:
         logging.debug(f"api setting SIG filter to: {sig_filter}")
         self.db.filters.set_sig_filter(sig_filter)
 
+    def set_probability_filter(self, min_probability: Optional[float], max_probability: Optional[float]):
+        """
+        Set the propagation probability range (0.0-1.0) required for spots.
+        Pass None values to clear the filter.
+        """
+        logging.debug(f"api setting probability filter to: {min_probability}-{max_probability}")
+        self.db.filters.set_probability_filter(min_probability, max_probability)
+
     def set_snr_filter(self, snr_threshold: Optional[float]):
         """
-        Set the minimum propagation SNR (in dB) required for spots.
-        Pass None to clear the filter.
+        Legacy compatibility wrapper that maps an SNR threshold to a probability range.
         """
-        logging.debug(f"api setting SNR filter to: {snr_threshold}")
-        self.db.filters.set_snr_filter(snr_threshold)
+        logging.debug(f"api setting legacy SNR filter to: {snr_threshold}")
+        if snr_threshold is None:
+            self.db.filters.set_probability_filter(None, None)
+        else:
+            self.db.filters.set_probability_filter(float(snr_threshold), 1.0)
 
     def update_activator_stats(self, callsign: str) -> int:
         j = self.pota.get_activator_stats(callsign)

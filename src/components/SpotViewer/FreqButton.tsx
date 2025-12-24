@@ -23,7 +23,8 @@ interface IFreqButtonProps {
     buttonSize?: ButtonSize,
     displayText?: string,
     widthSx?: string,
-    color?: ColorVariants
+    color?: ColorVariants,
+    spotId?: number
 };
 
 
@@ -57,21 +58,22 @@ export default function FreqButton(props: IFreqButtonProps) {
         );
     }
 
-    React.useEffect(() => {
-        if (checkQsyId(qsyButtonId)) {
-            setButtonColor('alert');
-        } else {
-            setButtonColor('primary');
-        }
-    }, [qsyButtonId]);
+    const rowSelected = props.spotId !== undefined && contextData.spotId === props.spotId;
+    const baseColor = rowSelected ? 'success' : (props.color ?? 'primary');
 
     React.useEffect(() => {
         if (checkQsyId(qsyButtonId)) {
             setButtonColor('alert');
         } else {
-            setButtonColor(props.color ?? 'primary');
+            setButtonColor(baseColor);
         }
-    }, []);
+    }, [qsyButtonId, baseColor]);
+
+    React.useEffect(() => {
+        if (!checkQsyId(qsyButtonId)) {
+            setButtonColor(baseColor);
+        }
+    }, [baseColor]);
 
     return (
         <Button

@@ -57,7 +57,7 @@ This gives a quick read on whether a park is “likely workable” before you ev
 
 1. **VOACAP Baseline** – For every hunter/activator pair we feed your grids, selected antennas, transmit power, and the current NOAA sunspot number into VOACAP. This produces a classic physics-based prediction for SNR and link probability.
 2. **Endpoint-Aware Kernel Smoothing** – Simultaneously, we harvest real-time WSPR reception reports for the same band. An endpoint-aware kernel (EA) compares each report’s geometry (distance, azimuth, TX/RX endpoints) to the hunter/activator path. Tunable profiles adjust how global or local that comparison should be.
-3. **Blending the Two** – When we have ample WSPR support, the kernel probability is shrunk toward the VOACAP prior to avoid runaway optimism. If WSPR density is light, we lean more on VOACAP’s reliability. The end result is a probability slider (and SNR estimate) that reflects both the modeled ionosphere and what the bands are *actually* doing in the last few minutes.
+3. **Blending the Two** – When we don't have ample WSPR support, the kernel probability is shrunk toward the VOACAP prior to avoid runaway optimism. If WSPR density is light, we lean more on VOACAP’s reliability. The end result is a probability slider (and SNR estimate) that reflects both the modeled ionosphere and what the bands are *actually* doing in the last few minutes.
 
 Because the VOACAP run includes your antenna choice—and the activator’s presumed setup—you can explore “what if” scenarios (e.g., small vertical vs. higher dipole) and immediately see how the odds shift.
 

@@ -26,7 +26,7 @@ const defData: ContextData = {
     otherOperators: '',
     summit: null,
     sigFilter: '',
-    snrFilter: '',
+    probabilityFilter: '',
     otherParks: '',
     continentFilter: '',
     loadingQsoData: false
@@ -58,7 +58,7 @@ export const AppContextProvider = ( {children}: any ) => {
             otherOperators: ctx.otherOperators,
             summit: ctx.summit,
             sigFilter: ctx.sigFilter,
-            snrFilter: ctx.snrFilter,
+            probabilityFilter: ctx.probabilityFilter,
             otherParks: ctx.otherParks,
             continentFilter: ctx.continentFilter,
             loadingQsoData: ctx.loadingQsoData
